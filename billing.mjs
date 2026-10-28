@@ -1,0 +1,14 @@
+﻿import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import ts from 'typescript';
+const source = readFileSync(new URL('../src/lib/billing.ts', import.meta.url), 'utf8');
+const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext } }).outputText;
+const { calculateTotals } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+const sample = [{ price: 160, quantity: 1, discount: 0, type: 'Part' }, { price: 35, quantity: 1, discount: 0, type: 'Part' }, { price: 250, quantity: 1, discount: 25, type: 'Part' }, { price: 200, quantity: 1, discount: 0, type: 'Service' }];
+assert.deepEqual(calculateTotals(sample), { parts: 445, services: 200, subtotal: 645, discount: 25, tax: 31, total: 651 });
+assert.equal(calculateTotals([{ price: 160, quantity: 2, discount: 10, type: 'Part' }]).total, 325.5);
+assert.equal(calculateTotals([{ price: 35, quantity: 1, discount: 100, type: 'Part' }]).total, 0);
+assert.equal(calculateTotals([{ price: 35, quantity: 1, discount: -10, type: 'Part' }]).discount, 0);
+assert.equal(calculateTotals([{ price: 0.1, quantity: 3, discount: 0, type: 'Part' }]).total, 0.32);
+assert.equal(calculateTotals([]).total, 0);
+console.log('Billing checks passed: totals, quantities, discounts, tax rounding, empty cart.');
