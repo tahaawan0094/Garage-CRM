@@ -6,7 +6,6 @@ import {
   Wrench,
   Clock3,
   CreditCard,
-  Printer,
   Layers,
   Activity,
 } from "lucide-react";
@@ -193,15 +192,6 @@ export default function ViewInfoModal({
           </div>
 
           <div className="view-info-header-actions">
-            <button
-              type="button"
-              className="view-info-print-btn"
-              onClick={() => window.print()}
-              title="Print Customer & Vehicle Dossier"
-            >
-              <Printer size={13} />
-              <span>Print Dossier</span>
-            </button>
             <button
               type="button"
               className="view-info-close-btn"

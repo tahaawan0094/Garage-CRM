@@ -36,6 +36,8 @@ const partSchema = new mongoose.Schema(
     sellingPrice: { type: Number, default: 0, min: 0 },
     commission: { type: Number, default: 0, min: 0 },      // External part commission
     supplier: { type: String, default: '', trim: true },
+    compatibility: { type: String, default: '', trim: true }, // e.g. Toyota Land Cruiser, Nissan Patrol
+    partNumber: { type: String, default: '', trim: true },    // OEM Part No / SKU
     lastRestocked: { type: String, default: '' },
     lastUpdated: { type: String, default: '' },
     activity: [partActivitySchema],

@@ -4,6 +4,7 @@ import { getNextInvoiceId, commitInvoiceId } from "../lib/sequence";
 import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
 import {
   Activity,
+  ArrowLeft,
   CalendarDays,
   CarFront,
   Check,
@@ -15,6 +16,7 @@ import {
   FileText,
   Printer,
   Search,
+  ShieldCheck,
   Trash2,
   Wrench,
   UserRound,
@@ -89,13 +91,29 @@ function WorkOrders(props: {
   const [isSavingInvoice, setIsSavingInvoice] = useState(false);
   const [deleteModalOrder, setDeleteModalOrder] = useState<WorkOrder | null>(null);
   const [isDeletingOrder, setIsDeletingOrder] = useState(false);
+  const [sideCardTab, setSideCardTab] = useState<"details" | "gatepass">("details");
+  const [printDocType, setPrintDocType] = useState<"invoice" | "gatepass">("invoice");
 
   const handlePrintInvoice = () => {
     if (!selectedOrder) {
       notify("Please select a work order to print invoice.");
       return;
     }
-    window.print();
+    setPrintDocType("invoice");
+    setTimeout(() => {
+      window.print();
+    }, 40);
+  };
+
+  const handlePrintGatePass = () => {
+    if (!selectedOrder) {
+      notify("Please select a work order to print gate pass.");
+      return;
+    }
+    setPrintDocType("gatepass");
+    setTimeout(() => {
+      window.print();
+    }, 40);
   };
 
   const fetchOrders = () => {
@@ -494,282 +512,478 @@ function WorkOrders(props: {
               </span>
             </header>
 
-            <div className="quote-detail-number" style={{ marginTop: "10px" }}>
-              <div>
-                <small style={{ color: "#718099", fontSize: "10px" }}>
-                  Work Order No.
-                </small>
-                <strong style={{ fontSize: "16px", display: "block" }}>
-                  {selectedOrder.workOrderId || selectedOrder.id}
-                </strong>
-              </div>
-              <strong style={{ fontSize: "15px", color: "#f15a24" }}>
-                {money(selectedOrder.total)}
-              </strong>
-            </div>
-
-            {/* Customer & Vehicle Info */}
-            <div className="quote-detail-block">
-              <h3>
-                <UserRound size={14} />
-                Customer &amp; Vehicle
-              </h3>
-              <strong>{selectedOrder.customer}</strong>
-              <span>
-                {selectedOrder.vehicle} · Plate: {selectedOrder.plate || "TBD"}
-              </span>
-              {selectedOrder.customerPhone && (
-                <span style={{ fontSize: "9px", color: "#506982" }}>
-                  Phone: {selectedOrder.customerPhone}
-                </span>
-              )}
-            </div>
-
-            {/* Repair Controls Form */}
+            {/* Side Card Tabs: Order Details vs Gate Pass */}
             <div
-              className="quote-detail-block"
-              style={{ gap: "8px", borderTop: "1px solid #edf0f4" }}
-            >
-              <h3>
-                <ClipboardList size={14} />
-                Repair Information
-              </h3>
-
-              <label style={{ display: "flex", flexDirection: "column", gap: "2px", fontSize: "9px" }}>
-                <span style={{ color: "#52647f", fontWeight: 600 }}>Repair Date</span>
-                <input
-                  type="date"
-                  style={{
-                    height: "30px",
-                    padding: "0 8px",
-                    border: "1px solid #dfe5ee",
-                    borderRadius: "4px",
-                    fontSize: "10px",
-                    background: "#fff",
-                  }}
-                  value={repairDate}
-                  onChange={(e) => setRepairDate(e.target.value)}
-                />
-              </label>
-
-              <label style={{ display: "flex", flexDirection: "column", gap: "2px", fontSize: "9px" }}>
-                <span style={{ color: "#52647f", fontWeight: 600 }}>Assigned Mechanic</span>
-                <select
-                  style={{
-                    height: "30px",
-                    padding: "0 8px",
-                    border: "1px solid #dfe5ee",
-                    borderRadius: "4px",
-                    fontSize: "10px",
-                    background: "#fff",
-                  }}
-                  value={assignedMechanic}
-                  onChange={(e) => setAssignedMechanic(e.target.value)}
-                >
-                  <option>Ali Hassan</option>
-                  <option>M. Khan</option>
-                  <option>Ali Shah</option>
-                  <option>Sheikh Ahmed</option>
-                </select>
-              </label>
-
-              <label style={{ display: "flex", flexDirection: "column", gap: "2px", fontSize: "9px" }}>
-                <span style={{ color: "#52647f", fontWeight: 600 }}>Repair Status</span>
-                <select
-                  style={{
-                    height: "30px",
-                    padding: "0 8px",
-                    border: "1px solid #dfe5ee",
-                    borderRadius: "4px",
-                    fontSize: "10px",
-                    background: "#fff",
-                  }}
-                  value={repairStatus}
-                  onChange={(e) => {
-                    const next = e.target.value as WorkOrderStatus;
-                    setRepairStatus(next);
-                    if (next === "Completed") {
-                      setVehicleReady("Yes - Ready for Pickup");
-                    }
-                  }}
-                >
-                  <option>In Progress</option>
-                  <option>Ready for Delivery</option>
-                  <option>Completed</option>
-                  <option>Awaiting Parts</option>
-                </select>
-              </label>
-
-              <label style={{ display: "flex", flexDirection: "column", gap: "2px", fontSize: "9px" }}>
-                <span style={{ color: "#52647f", fontWeight: 600 }}>Vehicle Ready</span>
-                <select
-                  style={{
-                    height: "30px",
-                    padding: "0 8px",
-                    border: "1px solid #dfe5ee",
-                    borderRadius: "4px",
-                    fontSize: "10px",
-                    background: "#fff",
-                  }}
-                  value={vehicleReady}
-                  onChange={(e) => setVehicleReady(e.target.value)}
-                >
-                  <option>Yes - Ready for Pickup</option>
-                  <option>No - In Progress</option>
-                  <option>No - Awaiting Parts</option>
-                </select>
-              </label>
-
-              <label style={{ display: "flex", flexDirection: "column", gap: "2px", fontSize: "9px" }}>
-                <span style={{ color: "#52647f", fontWeight: 600 }}>Technician Notes</span>
-                <textarea
-                  rows={2}
-                  value={technicianNotes}
-                  onChange={(e) => setTechnicianNotes(e.target.value)}
-                  placeholder="Record work completed on vehicle..."
-                  style={{
-                    padding: "6px",
-                    border: "1px solid #dfe5ee",
-                    borderRadius: "4px",
-                    fontSize: "10px",
-                    color: "#263a57",
-                    resize: "vertical",
-                  }}
-                />
-              </label>
-            </div>
-
-            {/* Repair Confirmation Box */}
-            <div
-              className={`intake-repair-confirmation ${
-                repairStatus === "Completed" || repairStatus === "Invoiced"
-                  ? "is-complete"
-                  : ""
-              }`}
-              style={{ margin: "8px 0", padding: "8px" }}
-            >
-              <span className="intake-repair-confirmation-icon" style={{ width: "24px", height: "24px" }}>
-                <Check size={14} />
-              </span>
-              <div>
-                <strong style={{ fontSize: "10px" }}>
-                  {repairStatus === "Completed" || repairStatus === "Invoiced"
-                    ? "Repair work completed."
-                    : "Repair is currently in progress."}
-                </strong>
-                <p style={{ fontSize: "9px" }}>
-                  {vehicleReady.startsWith("Yes")
-                    ? "Vehicle is confirmed ready for delivery."
-                    : "Verify inspection before customer handover."}
-                </p>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div
+              className="work-order-side-tabs"
               style={{
                 display: "flex",
-                flexDirection: "column",
-                gap: "6px",
-                marginTop: "10px",
-                borderTop: "1px solid #edf0f4",
-                paddingTop: "10px",
+                gap: "4px",
+                margin: "10px 0 8px",
+                padding: "3px",
+                background: "#f1f5f9",
+                borderRadius: "7px",
               }}
             >
-
               <button
                 type="button"
-                className="intake-action-button orange"
-                disabled={isSavingInvoice}
                 style={{
-                  minHeight: "34px",
-                  fontSize: "11px",
-                  fontWeight: 700,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "6px",
-                  background: "linear-gradient(110deg, #ff631c, #f04c08)",
-                  color: "#fff",
+                  flex: 1,
+                  padding: "6px 8px",
                   borderRadius: "5px",
                   border: 0,
-                  cursor: "pointer",
-                }}
-                onClick={handleSaveInvoice}
-              >
-                <FileText size={15} />
-                {isSavingInvoice ? "Saving Invoice..." : "Save Invoice"}
-              </button>
-
-              <button
-                type="button"
-                className="intake-action-button"
-                style={{
-                  minHeight: "34px",
+                  background: sideCardTab === "details" ? "#ffffff" : "transparent",
+                  color: sideCardTab === "details" ? "#ff631c" : "#64748b",
                   fontSize: "11px",
-                  fontWeight: 700,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "6px",
-                  background:
-                    repairStatus === "Completed" ||
-                    repairStatus === "Invoiced" ||
-                    selectedOrder.status === "Invoiced"
-                      ? "linear-gradient(110deg, #10b981, #059669)"
-                      : "#2563eb",
-                  color: "#fff",
-                  borderRadius: "5px",
-                  border: 0,
+                  fontWeight: sideCardTab === "details" ? 700 : 500,
+                  boxShadow: sideCardTab === "details" ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
                   cursor: "pointer",
-                }}
-                onClick={handlePrintInvoice}
-              >
-                <Printer size={14} />
-                Print Invoice
-              </button>
-
-              <button
-                type="button"
-                className="intake-action-button outline"
-                style={{
-                  minHeight: "28px",
-                  fontSize: "10px",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   gap: "5px",
+                  transition: "all 0.15s ease",
                 }}
-                onClick={() => window.print()}
+                onClick={() => setSideCardTab("details")}
               >
-                <Printer size={13} />
-                Print Job Card
+                <Wrench size={13} />
+                <span>Order Details</span>
               </button>
-
               <button
                 type="button"
-                className="intake-action-button"
                 style={{
-                  minHeight: "28px",
-                  fontSize: "10px",
+                  flex: 1,
+                  padding: "6px 8px",
+                  borderRadius: "5px",
+                  border: 0,
+                  background: sideCardTab === "gatepass" ? "#ffffff" : "transparent",
+                  color: sideCardTab === "gatepass" ? "#ff631c" : "#64748b",
+                  fontSize: "11px",
+                  fontWeight: sideCardTab === "gatepass" ? 700 : 500,
+                  boxShadow: sideCardTab === "gatepass" ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+                  cursor: "pointer",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   gap: "5px",
-                  background: "#fff1f2",
-                  color: "#e11d48",
-                  border: "1px solid #fecaca",
-                  borderRadius: "5px",
-                  cursor: "pointer",
-                  fontWeight: 600,
-                  marginTop: "4px",
+                  transition: "all 0.15s ease",
                 }}
-                onClick={() => setDeleteModalOrder(selectedOrder)}
+                onClick={() => setSideCardTab("gatepass")}
               >
-                <Trash2 size={13} />
-                Delete Work Order
+                <ClipboardList size={13} />
+                <span>Gate Pass</span>
               </button>
             </div>
+
+            {sideCardTab === "details" ? (
+              <>
+                <div className="quote-detail-number" style={{ marginTop: "6px" }}>
+                  <div>
+                    <small style={{ color: "#718099", fontSize: "10px" }}>
+                      Work Order No.
+                    </small>
+                    <strong style={{ fontSize: "16px", display: "block" }}>
+                      {selectedOrder.workOrderId || selectedOrder.id}
+                    </strong>
+                  </div>
+                  <strong style={{ fontSize: "15px", color: "#f15a24" }}>
+                    {money(selectedOrder.total)}
+                  </strong>
+                </div>
+
+                {/* Customer & Vehicle Info */}
+                <div className="quote-detail-block">
+                  <h3>
+                    <UserRound size={14} />
+                    Customer &amp; Vehicle
+                  </h3>
+                  <strong>{selectedOrder.customer}</strong>
+                  <span>
+                    {selectedOrder.vehicle} · Plate: {selectedOrder.plate || "TBD"}
+                  </span>
+                  {selectedOrder.customerPhone && (
+                    <span style={{ fontSize: "9px", color: "#506982" }}>
+                      Phone: {selectedOrder.customerPhone}
+                    </span>
+                  )}
+                </div>
+
+                {/* Repair Controls Form */}
+                <div
+                  className="quote-detail-block"
+                  style={{ gap: "8px", borderTop: "1px solid #edf0f4" }}
+                >
+                  <h3>
+                    <ClipboardList size={14} />
+                    Repair Information
+                  </h3>
+
+                  <label style={{ display: "flex", flexDirection: "column", gap: "2px", fontSize: "9px" }}>
+                    <span style={{ color: "#52647f", fontWeight: 600 }}>Repair Date</span>
+                    <input
+                      type="date"
+                      style={{
+                        height: "30px",
+                        padding: "0 8px",
+                        border: "1px solid #dfe5ee",
+                        borderRadius: "4px",
+                        fontSize: "10px",
+                        background: "#fff",
+                      }}
+                      value={repairDate}
+                      onChange={(e) => setRepairDate(e.target.value)}
+                    />
+                  </label>
+
+                  <label style={{ display: "flex", flexDirection: "column", gap: "2px", fontSize: "9px" }}>
+                    <span style={{ color: "#52647f", fontWeight: 600 }}>Assigned Mechanic</span>
+                    <select
+                      style={{
+                        height: "30px",
+                        padding: "0 8px",
+                        border: "1px solid #dfe5ee",
+                        borderRadius: "4px",
+                        fontSize: "10px",
+                        background: "#fff",
+                      }}
+                      value={assignedMechanic}
+                      onChange={(e) => setAssignedMechanic(e.target.value)}
+                    >
+                      <option>Ali Hassan</option>
+                      <option>M. Khan</option>
+                      <option>Ali Shah</option>
+                      <option>Sheikh Ahmed</option>
+                    </select>
+                  </label>
+
+                  <label style={{ display: "flex", flexDirection: "column", gap: "2px", fontSize: "9px" }}>
+                    <span style={{ color: "#52647f", fontWeight: 600 }}>Repair Status</span>
+                    <select
+                      style={{
+                        height: "30px",
+                        padding: "0 8px",
+                        border: "1px solid #dfe5ee",
+                        borderRadius: "4px",
+                        fontSize: "10px",
+                        background: "#fff",
+                      }}
+                      value={repairStatus}
+                      onChange={(e) => {
+                        const next = e.target.value as WorkOrderStatus;
+                        setRepairStatus(next);
+                        if (next === "Completed") {
+                          setVehicleReady("Yes - Ready for Pickup");
+                        }
+                      }}
+                    >
+                      <option>In Progress</option>
+                      <option>Ready for Delivery</option>
+                      <option>Completed</option>
+                      <option>Awaiting Parts</option>
+                    </select>
+                  </label>
+
+                  <label style={{ display: "flex", flexDirection: "column", gap: "2px", fontSize: "9px" }}>
+                    <span style={{ color: "#52647f", fontWeight: 600 }}>Vehicle Ready</span>
+                    <select
+                      style={{
+                        height: "30px",
+                        padding: "0 8px",
+                        border: "1px solid #dfe5ee",
+                        borderRadius: "4px",
+                        fontSize: "10px",
+                        background: "#fff",
+                      }}
+                      value={vehicleReady}
+                      onChange={(e) => setVehicleReady(e.target.value)}
+                    >
+                      <option>Yes - Ready for Pickup</option>
+                      <option>No - In Progress</option>
+                      <option>No - Awaiting Parts</option>
+                    </select>
+                  </label>
+
+                  <label style={{ display: "flex", flexDirection: "column", gap: "2px", fontSize: "9px" }}>
+                    <span style={{ color: "#52647f", fontWeight: 600 }}>Technician Notes</span>
+                    <textarea
+                      rows={2}
+                      value={technicianNotes}
+                      onChange={(e) => setTechnicianNotes(e.target.value)}
+                      placeholder="Record work completed on vehicle..."
+                      style={{
+                        padding: "6px",
+                        border: "1px solid #dfe5ee",
+                        borderRadius: "4px",
+                        fontSize: "10px",
+                        color: "#263a57",
+                        resize: "vertical",
+                      }}
+                    />
+                  </label>
+                </div>
+
+                {/* Repair Confirmation Box */}
+                <div
+                  className={`intake-repair-confirmation ${
+                    repairStatus === "Completed" || repairStatus === "Invoiced"
+                      ? "is-complete"
+                      : ""
+                  }`}
+                  style={{ margin: "8px 0", padding: "8px" }}
+                >
+                  <span className="intake-repair-confirmation-icon" style={{ width: "24px", height: "24px" }}>
+                    <Check size={14} />
+                  </span>
+                  <div>
+                    <strong style={{ fontSize: "10px" }}>
+                      {repairStatus === "Completed" || repairStatus === "Invoiced"
+                        ? "Repair work completed."
+                        : "Repair is currently in progress."}
+                    </strong>
+                    <p style={{ fontSize: "9px" }}>
+                      {vehicleReady.startsWith("Yes")
+                        ? "Vehicle is confirmed ready for delivery."
+                        : "Verify inspection before customer handover."}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "6px",
+                    marginTop: "10px",
+                    borderTop: "1px solid #edf0f4",
+                    paddingTop: "10px",
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="intake-action-button orange"
+                    disabled={isSavingInvoice}
+                    style={{
+                      minHeight: "34px",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
+                      background: "linear-gradient(110deg, #ff631c, #f04c08)",
+                      color: "#fff",
+                      borderRadius: "5px",
+                      border: 0,
+                      cursor: "pointer",
+                    }}
+                    onClick={handleSaveInvoice}
+                  >
+                    <FileText size={15} />
+                    {isSavingInvoice ? "Saving Invoice..." : "Save Invoice"}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="intake-action-button"
+                    style={{
+                      minHeight: "34px",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
+                      background:
+                        repairStatus === "Completed" ||
+                        repairStatus === "Invoiced" ||
+                        selectedOrder.status === "Invoiced"
+                          ? "linear-gradient(110deg, #10b981, #059669)"
+                          : "#2563eb",
+                      color: "#fff",
+                      borderRadius: "5px",
+                      border: 0,
+                      cursor: "pointer",
+                    }}
+                    onClick={handlePrintInvoice}
+                  >
+                    <Printer size={14} />
+                    Print Invoice
+                  </button>
+
+                  <button
+                    type="button"
+                    className="intake-action-button outline"
+                    style={{
+                      minHeight: "28px",
+                      fontSize: "10px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "5px",
+                    }}
+                    onClick={() => {
+                      setPrintDocType("invoice");
+                      setTimeout(() => window.print(), 40);
+                    }}
+                  >
+                    <Printer size={13} />
+                    Print Job Card
+                  </button>
+
+                  <button
+                    type="button"
+                    className="intake-action-button"
+                    style={{
+                      minHeight: "28px",
+                      fontSize: "10px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "5px",
+                      background: "#fff1f2",
+                      color: "#e11d48",
+                      border: "1px solid #fecaca",
+                      borderRadius: "5px",
+                      cursor: "pointer",
+                      fontWeight: 600,
+                      marginTop: "4px",
+                    }}
+                    onClick={() => setDeleteModalOrder(selectedOrder)}
+                  >
+                    <Trash2 size={13} />
+                    Delete Work Order
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="work-order-gatepass-panel">
+                <div className="quote-detail-number" style={{ marginTop: "6px" }}>
+                  <div>
+                    <small style={{ color: "#718099", fontSize: "10px" }}>Gate Pass No.</small>
+                    <strong style={{ fontSize: "16px", display: "block", color: "#0f172a" }}>
+                      GP-{String((selectedOrder.workOrderId || selectedOrder.id || "1").replace(/^WO-?/, "")).padStart(5, "0")}
+                    </strong>
+                  </div>
+                  <span
+                    className="quote-status-badge approved"
+                    style={{ background: "#e1f7ea", color: "#078348", fontSize: "9px", padding: "4px 8px" }}
+                  >
+                    Authorized for Exit
+                  </span>
+                </div>
+
+                {/* Gate Pass Verification Info */}
+                <div className="quote-detail-block" style={{ marginTop: "8px" }}>
+                  <h3><UserRound size={14} />Customer &amp; Vehicle Verification</h3>
+                  <strong>{selectedOrder.customer}</strong>
+                  <span>{selectedOrder.vehicle} · Plate: <strong style={{ color: "#0f172a" }}>{selectedOrder.plate || "TBD"}</strong></span>
+                  {selectedOrder.customerPhone && (
+                    <span style={{ fontSize: "9px", color: "#506982" }}>Phone: {selectedOrder.customerPhone}</span>
+                  )}
+                  <span style={{ fontSize: "9px", color: "#506982" }}>Assigned Mechanic: {assignedMechanic}</span>
+                </div>
+
+                {/* Security Clearance Checklist */}
+                <div className="quote-detail-block" style={{ marginTop: "8px", borderTop: "1px solid #edf0f4", paddingTop: "8px" }}>
+                  <h3><ShieldCheck size={14} style={{ color: "#10b981" }} />Gate Clearance Checklist</h3>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "10px", marginTop: "4px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "#166534" }}>
+                      <Check size={13} style={{ color: "#10b981", flexShrink: 0 }} />
+                      <span>Work Order Repairs &amp; Inspection Completed</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "#166534" }}>
+                      <Check size={13} style={{ color: "#10b981", flexShrink: 0 }} />
+                      <span>Quality Road Test &amp; Multi-point Check Passed</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "#166534" }}>
+                      <Check size={13} style={{ color: "#10b981", flexShrink: 0 }} />
+                      <span>Invoice &amp; Accounting Cleared ({money(selectedOrder.total)})</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "#166534" }}>
+                      <Check size={13} style={{ color: "#10b981", flexShrink: 0 }} />
+                      <span>Vehicle Key &amp; Personal Belongings Handover OK</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Gate Notice Box */}
+                <div
+                  style={{
+                    background: "#f0fdf4",
+                    border: "1px solid #bbf7d0",
+                    borderRadius: "6px",
+                    padding: "8px 10px",
+                    margin: "10px 0 6px",
+                    fontSize: "9px",
+                    color: "#15803d",
+                    lineHeight: 1.4,
+                  }}
+                >
+                  <strong>Gate Clearance Authorization:</strong>
+                  <p style={{ margin: "2px 0 0" }}>
+                    This vehicle is approved to exit workshop premises. Handover is authorized for delivery to customer.
+                  </p>
+                </div>
+
+                {/* Gate Pass Action Buttons */}
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "6px",
+                    marginTop: "10px",
+                    borderTop: "1px solid #edf0f4",
+                    paddingTop: "10px",
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="intake-action-button"
+                    style={{
+                      minHeight: "36px",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
+                      background: "linear-gradient(110deg, #10b981, #059669)",
+                      color: "#fff",
+                      borderRadius: "5px",
+                      border: 0,
+                      cursor: "pointer",
+                      boxShadow: "0 2px 6px rgba(16, 185, 129, 0.25)",
+                    }}
+                    onClick={handlePrintGatePass}
+                  >
+                    <Printer size={15} />
+                    Print Gate Pass
+                  </button>
+
+                  <button
+                    type="button"
+                    className="intake-action-button outline"
+                    style={{
+                      minHeight: "28px",
+                      fontSize: "10px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "5px",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: "5px",
+                      background: "#fff",
+                      color: "#475569",
+                      cursor: "pointer",
+                    }}
+                    onClick={() => setSideCardTab("details")}
+                  >
+                    <ArrowLeft size={13} />
+                    Back to Order Details
+                  </button>
+                </div>
+              </div>
+            )}
           </aside>
         ) : (
           <aside className="quote-detail-card" style={{ padding: "20px", textAlign: "center" }}>
@@ -781,8 +995,124 @@ function WorkOrders(props: {
         )}
       </div>
 
+      {/* Off-screen / Print-only Single-Page Gate Pass */}
+      {selectedOrder && printDocType === "gatepass" && (
+        <div className="printable-tax-invoice-wrapper" id="printable-gate-pass">
+          <div className="printable-tax-invoice">
+            {/* Tax Invoice Document Header */}
+            <div className="tax-invoice-header">
+              <div className="tax-invoice-brand">
+                <h2>GARAGE WORKSPACE</h2>
+                <p>Auto Care &amp; Service Center · Doha, Qatar</p>
+                <p>Phone: +974 5555 1234 · C.R: 84920/1</p>
+              </div>
+              <div className="tax-invoice-meta">
+                <span className="tax-invoice-badge" style={{ background: "#e1f7ea", color: "#078348", borderColor: "#a7f3d0" }}>
+                  VEHICLE GATE PASS / تصريح خروج مركبة
+                </span>
+                <h3>
+                  GP-{String((selectedOrder.workOrderId || selectedOrder.id || "1").replace(/^WO-?/, "")).padStart(5, "0")}
+                </h3>
+                <p>Issue Date: {repairDate || new Date().toLocaleDateString("en-GB")}</p>
+                <p>Work Order: #{selectedOrder.workOrderId || selectedOrder.id}</p>
+              </div>
+            </div>
+
+            {/* Customer & Vehicle Grid */}
+            <div className="tax-invoice-grid">
+              <div>
+                <strong>Released To Customer</strong>
+                <div className="party-name">{selectedOrder.customer}</div>
+                <div className="party-detail">Phone: {selectedOrder.customerPhone || "N/A"}</div>
+                <div className="party-detail">Location: Doha, Qatar</div>
+              </div>
+              <div>
+                <strong>Vehicle Identification</strong>
+                <div className="party-name">{selectedOrder.vehicle}</div>
+                <div className="party-detail">
+                  Plate No: <strong>{selectedOrder.plate || "TBD"}</strong> · Year: {selectedOrder.year || "—"}
+                </div>
+                <div className="party-detail">Assigned Mechanic: {assignedMechanic}</div>
+              </div>
+            </div>
+
+            {/* Security Clearance Table */}
+            <table className="tax-invoice-table">
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left" }}>Inspection &amp; Clearance Verification</th>
+                  <th style={{ textAlign: "center", width: "140px" }}>Verification Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <div className="item-title">Work Order Service &amp; Repairs Completed</div>
+                    <small className="item-notes">{selectedOrder.service || "General Service / Repair"} - Quality inspected</small>
+                  </td>
+                  <td style={{ textAlign: "center", fontWeight: 700, color: "#078348" }}>VERIFIED &amp; PASSED</td>
+                </tr>
+                <tr>
+                  <td>
+                    <div className="item-title">Invoice &amp; Accounting Clearance</div>
+                    <small className="item-notes">Total Amount: {money(selectedOrder.total)} · Billing cleared</small>
+                  </td>
+                  <td style={{ textAlign: "center", fontWeight: 700, color: "#078348" }}>CLEARED</td>
+                </tr>
+                <tr>
+                  <td>
+                    <div className="item-title">Customer Property &amp; Vehicle Condition Check</div>
+                    <small className="item-notes">Interior / exterior inspected and personal items checked</small>
+                  </td>
+                  <td style={{ textAlign: "center", fontWeight: 700, color: "#078348" }}>CHECKED</td>
+                </tr>
+                <tr>
+                  <td>
+                    <div className="item-title">Vehicle Key &amp; Documents Handover</div>
+                    <small className="item-notes">Handed over to authorized recipient / vehicle owner</small>
+                  </td>
+                  <td style={{ textAlign: "center", fontWeight: 700, color: "#078348" }}>RELEASED</td>
+                </tr>
+              </tbody>
+            </table>
+
+            {/* Authorization Summary */}
+            <div className="tax-invoice-totals" style={{ justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontSize: "11px", color: "#475569" }}>
+                <p style={{ margin: "0 0 3px", fontWeight: 600, color: "#0f172a" }}>Workshop Gate Exit Terms:</p>
+                <p style={{ margin: 0 }}>This document confirms vehicle clearance to depart workshop premises. Handover is complete.</p>
+              </div>
+              <div className="totals-box" style={{ minWidth: "210px" }}>
+                <div className="total-row grand">
+                  <span>Exit Clearance</span>
+                  <span style={{ color: "#078348" }}>APPROVED</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Signatures */}
+            <div className="tax-invoice-footer" style={{ marginTop: "24px" }}>
+              <div>
+                <p className="thank-you">Thank you for trusting Garage Workspace!</p>
+                <p className="warranty">For assistance or queries, please contact workshop customer support.</p>
+              </div>
+              <div style={{ display: "flex", gap: "25px" }}>
+                <div className="signature-box">
+                  <div className="signature-line" />
+                  <span>Customer Received</span>
+                </div>
+                <div className="signature-box">
+                  <div className="signature-line" />
+                  <span>Gate Security / Supervisor</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Off-screen / Print-only Single-Page Tax Invoice */}
-      {selectedOrder && (
+      {selectedOrder && printDocType === "invoice" && (
         <div className="printable-tax-invoice-wrapper" id="printable-tax-invoice">
           <div className="printable-tax-invoice">
             {/* Tax Invoice Document Header */}

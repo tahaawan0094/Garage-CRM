@@ -319,7 +319,85 @@ button:disabled { cursor: default; }
 .search-box:focus-within { border-color: #f76524; box-shadow: 0 0 0 3px #f7652415; }
 .search-box input::placeholder { color: #8592a9; }
 kbd { white-space: nowrap; border: 1px solid #dce2eb; border-radius: 5px; padding: 1px 5px; background: white; font: 12px 'Segoe UI', sans-serif; }
-.header-right { display: flex; align-items: center; gap: 24px; }
+
+/* Topbar Workshop Hub & Live Status */
+.topbar-workshop-hub {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 0;
+}
+.workshop-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+.workshop-identity-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #fff0eb;
+  color: #ff631c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.workshop-identity-info {
+  display: flex;
+  flex-direction: column;
+}
+.workshop-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.workshop-branch {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.workshop-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #059669;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 12px;
+  margin-left: 6px;
+  white-space: nowrap;
+}
+.live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 0 2px #d1fae5;
+  animation: livePulse 2s infinite ease-in-out;
+}
+@keyframes livePulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 4px rgba(16, 185, 129, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+@media (max-width: 760px) {
+  .topbar-workshop-hub { display: none; }
+}
+
+.header-right { display: flex; align-items: center; gap: 24px; margin-left: auto; }
 .date { display: flex; align-items: center; gap: 10px; font-size: 12px; white-space: nowrap; }
 .icon-button { display: inline-flex; justify-content: center; align-items: center; background: transparent; color: #253b5c; padding: 5px; border-radius: 5px; }
 .icon-button:hover { background: #eaf0f8; }
@@ -560,7 +638,7 @@ td small, .cell-detail { display: block; color: #73839d; }
 .discount-input::-webkit-inner-spin-button { appearance: none; }
 .delete-item { display: inline-flex; padding: 4px; color: #ff301e; background: transparent; border-radius: 4px; }
 .cart-empty { text-align: center; color: #7d8ba0; padding: 25px; font-size: 12px; }.cart-empty > svg { margin: auto; }
-.pos-bottom-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 11px; }
+.pos-bottom-grid { display: grid; grid-template-columns: 1fr; gap: 11px; }
 .pos-bottom-grid .panel { padding: 10px 12px; }.pos-bottom-grid .panel-title { margin-bottom: 7px; }
 .recent-invoices table { font-size: 9px; min-width: 520px; }.recent-invoices td, .recent-invoices th { padding: 5px; }.recent-invoices td:first-child { min-width: 75px; }.recent-invoices td:nth-child(4) { max-width: none; }.recent-invoices .badge { padding: 1px 5px; font-size: 9px; }
 .shortcut-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }

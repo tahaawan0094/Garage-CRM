@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Activity, ArrowUp, Bell, Box, CalendarDays, CarFront, ChartColumn, Check, ChevronDown, CircleHelp, Clock3, FileText, Headset, Home, Lock, Menu, MoreHorizontal, Plus, Search, Settings, ShoppingCart, Unlock, Users, Wifi, Wrench, X, type LucideIcon } from 'lucide-react';
+import { Activity, ArrowUp, Bell, Box, CalendarDays, CarFront, ChartColumn, Check, ChevronDown, CircleHelp, ClipboardList, Clock3, FileText, Headset, Home, Lock, Menu, MoreHorizontal, Plus, Settings, ShoppingCart, Unlock, Users, Wifi, Wrench, X, type LucideIcon } from 'lucide-react';
 import SplashScreen from './components/SplashScreen';
 import PosBilling from './components/PosBilling';
 import NewIntake from './components/NewIntake';
@@ -11,10 +11,11 @@ import Customers from './components/Customers';
 import PartsInventory from './components/PartsInventory';
 import Mechanics from './components/Mechanics';
 import Reports from './components/Reports';
+import AddPartModal from './components/AddPartModal';
 import { workOrdersApi, quotationsApi, customersApi, vehiclesApi, partsApi, mechanicsApi, invoicesApi } from './lib/api';
 import { getNextInvoiceId, commitInvoiceId } from './lib/sequence';
 
-const nav: [string, LucideIcon][] = [['Dashboard', Home], ['POS Billing', ShoppingCart], ['New Intake', Plus], ['Work Orders', Wrench], ['Quotations', FileText], ['Invoices', FileText], ['Vehicles', CarFront], ['Customers', Users], ['Parts Inventory', Box], ['Mechanics', Users], ['Reports', ChartColumn], ['Settings', Settings]];
+const nav: [string, LucideIcon][] = [['Dashboard', Home], ['POS Billing', ShoppingCart], ['New Intake', ClipboardList], ['Work Orders', Wrench], ['Quotations', FileText], ['Invoices', FileText], ['Vehicles', CarFront], ['Customers', Users], ['Parts Inventory', Box], ['Mechanics', Users], ['Reports', ChartColumn], ['Settings', Settings]];
 const money = (value: number) => `QAR ${value.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
 function PanelTitle({ icon: Icon, title, onView }: { icon: LucideIcon; title: string; onView?: () => void }) {
   return <div className="panel-title"><div><Icon size={25} /><h2>{title}</h2></div>{onView && <button className="text-link" onClick={onView}>View all</button>}</div>;
@@ -167,21 +168,6 @@ function App() {
         });
         setNotice(`Vehicle "${field2}" saved to database successfully.`);
         setRefreshTrigger(prev => prev + 1);
-      } else if (modal === 'Add Part') {
-        const parts = field2.split('/');
-        const category = (parts[0] || '').trim() || 'General';
-        const brand = (parts[1] || '').trim() || 'Standard';
-        await partsApi.create({
-          name: field1,
-          category,
-          brand,
-          quantity: Number(field3) >= 0 ? Number(field3) : 0,
-          unitCost: 80,
-          sellingPrice: 100,
-          lowStockAt: 5,
-        });
-        setNotice(`Part "${field1}" saved to database successfully.`);
-        setRefreshTrigger(prev => prev + 1);
       } else if (modal === 'Add Mechanic') {
         await mechanicsApi.create({
           name: field1,
@@ -199,6 +185,17 @@ function App() {
       setNotice(`Failed to save: ${err.message || 'Error'}`);
     }
     setModal(null);
+  };
+
+  const handleSavePart = async (partData: any) => {
+    try {
+      await partsApi.create(partData);
+      setNotice(`Part "${partData.name}" saved to database successfully.`);
+      setRefreshTrigger(prev => prev + 1);
+      setModal(null);
+    } catch (err: any) {
+      setNotice(`Failed to save part: ${err.message || 'Error'}`);
+    }
   };
 
   const activeJobsCount = liveOrders.filter(o => o.status === 'In Progress' || o.status === 'Active').length;
@@ -280,10 +277,64 @@ function App() {
     <div className={`main-shell ${!isSidebarExpanded ? 'sidebar-minimized' : 'sidebar-expanded'}`}>
       <header className="topbar">
         <button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setSidebar(true)}><Menu /></button>
-        <div className="search-box"><Search size={21} /><input ref={searchRef} value={query} onChange={event => setQuery(event.target.value)} placeholder="Search customers, vehicles, work orders, invoices..." aria-label="Search work orders" /><kbd>Ctrl K</kbd></div>
-        <div className="header-right"><div className="date"><CalendarDays size={20} /><span>Mon, 14 Apr 2025</span></div><div className="notifications"><button className="icon-button bell" aria-label="Notifications" aria-expanded={notifications} onClick={() => setNotifications(!notifications)}><Bell size={23} /><span>{quotes.length}</span></button>{notifications && <div className="notification-menu"><strong>Notifications</strong><p>{quotes.length} quotations are awaiting your approval.</p><p>{lowStockParts.length} inventory items are running low.</p><p>{vehiclesReadyCount} vehicles are ready for delivery.</p></div>}</div><button className="profile" onClick={() => open('My profile')}><span className="profile-avatar">SA</span><span><strong>Sheikh Ahmed</strong><small>Garage Owner</small></span><ChevronDown size={17} /></button></div>
+        <div className="topbar-workshop-hub">
+          <div className="workshop-identity">
+            <div className="workshop-identity-icon">
+              <Wrench size={16} />
+            </div>
+            <div className="workshop-identity-info">
+              <span className="workshop-name">Doha Central Workshop &amp; Service Hub</span>
+              <span className="workshop-branch">Main Garage Facility • Bays 01–12</span>
+            </div>
+            <div className="workshop-live-badge">
+              <span className="live-dot" />
+              <span>Operational</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="header-right">
+          <div className="date">
+            <CalendarDays size={18} />
+            <span>
+              {new Date().toLocaleDateString('en-GB', {
+                weekday: 'short',
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+              })}
+            </span>
+          </div>
+          <div className="notifications">
+            <button
+              className="icon-button bell"
+              aria-label="Notifications"
+              aria-expanded={notifications}
+              onClick={() => setNotifications(!notifications)}
+            >
+              <Bell size={21} />
+              <span>{quotes.length}</span>
+            </button>
+            {notifications && (
+              <div className="notification-menu">
+                <strong>Notifications</strong>
+                <p>{quotes.length} quotations are awaiting your approval.</p>
+                <p>{lowStockParts.length} inventory items are running low.</p>
+                <p>{vehiclesReadyCount} vehicles are ready for delivery.</p>
+              </div>
+            )}
+          </div>
+          <button className="profile" onClick={() => open('My profile')}>
+            <span className="profile-avatar">SA</span>
+            <span>
+              <strong>Sheikh Ahmed</strong>
+              <small>Garage Owner</small>
+            </span>
+            <ChevronDown size={17} />
+          </button>
+        </div>
       </header>
-      <div hidden={page !== 'POS Billing'}><PosBilling globalSearch={query} notify={setNotice} /></div>
+      <div hidden={page !== 'POS Billing'}><PosBilling globalSearch={query} notify={setNotice} refreshTrigger={refreshTrigger} /></div>
       <div hidden={page !== 'New Intake'}>
         <NewIntake
           notify={setNotice}
@@ -398,7 +449,21 @@ function App() {
         </button>
       </div>
     )}
-    {modal && <div className="modal-backdrop" onClick={() => setModal(null)}><section className="modal" role="dialog" aria-modal="true" aria-label={modal} onClick={event => event.stopPropagation()}><div className="modal-heading"><h2>{modal}</h2><button autoFocus className="icon-button" aria-label="Close dialog" onClick={() => setModal(null)}><X /></button></div>{modal.startsWith('Work order') ? (() => { const order = liveOrders.find(item => modal.endsWith(item.id)); return order ? <div className="order-details"><CarFront size={48} /><h3>{order.vehicle}</h3><p>{order.customer} · Plate {order.plate}</p><p>{order.service} — {order.detail}</p><p>Assigned to {order.mechanic}</p><span className="badge">{order.status}</span></div> : <div className="empty-state"><CarFront size={30} /><p>Work order details not found.</p></div>; })() : ['Add Customer', 'Add Vehicle', 'Add Part', 'Add Mechanic', 'New Intake', 'New Invoice', 'Create Invoice', 'Create Quotation', 'Quick Bill', 'Service Sale', 'Parts Sale'].includes(modal) ? <form onSubmit={handleModalSubmit}><p className="form-intro">Enter details to save directly into MongoDB Atlas database.</p><label>{modal === 'Add Part' ? 'Part name' : modal === 'Add Mechanic' ? 'Mechanic name' : 'Customer name'}<input name="field1" required placeholder={modal === 'Add Part' ? 'e.g. Brake Pads Front' : modal === 'Add Mechanic' ? 'e.g. Tariq Khan' : 'e.g. Sheikh Ahmed'} /></label><label>{modal === 'Add Customer' ? 'Phone number' : modal === 'Add Vehicle' ? 'Vehicle / model' : modal === 'Add Part' ? 'Category / brand' : modal === 'Add Mechanic' ? 'Role / Specialization' : 'Vehicle / description'}<input name="field2" required placeholder={modal === 'Add Customer' ? '+974 5512 3456' : modal === 'Add Vehicle' ? 'e.g. Toyota Land Cruiser' : modal === 'Add Part' ? 'e.g. Brakes / Toyota' : modal === 'Add Mechanic' ? 'e.g. Engine Specialist' : 'e.g. Toyota Land Cruiser'} /></label><label>{modal === 'Add Vehicle' ? 'Plate number' : modal === 'Add Part' ? 'Initial stock quantity' : modal === 'Add Mechanic' ? 'Phone number' : 'Notes / Address'}{modal === 'Add Vehicle' ? <input name="field3" required placeholder="e.g. 770781" /> : modal === 'Add Part' ? <input name="field3" required type="number" min="0" placeholder="e.g. 12" /> : modal === 'Add Mechanic' ? <input name="field3" required placeholder="e.g. 050 123 4567" /> : <textarea name="field3" placeholder="Add address or any customer notes" rows={3} />}</label><button type="submit" className="primary-button"><Plus size={18} />Save to Database</button></form> : <div className="module-placeholder"><Activity size={38} /><h3>{modal}</h3><p>This module is ready for the next development step. Explore work orders and approve quotations on the dashboard now.</p><button className="primary-button" onClick={() => setModal(null)}>Back to dashboard</button></div>}</section></div>}
+    {modal === 'Add Part' ? (
+      <AddPartModal
+        isOpen={true}
+        onClose={() => setModal(null)}
+        onSave={handleSavePart}
+        notify={setNotice}
+      />
+    ) : modal && (
+      <div className="modal-backdrop" onClick={() => setModal(null)}>
+        <section className="modal" role="dialog" aria-modal="true" aria-label={modal} onClick={event => event.stopPropagation()}>
+          <div className="modal-heading"><h2>{modal}</h2><button autoFocus className="icon-button" aria-label="Close dialog" onClick={() => setModal(null)}><X /></button></div>
+          {modal.startsWith('Work order') ? (() => { const order = liveOrders.find(item => modal.endsWith(item.id)); return order ? <div className="order-details"><CarFront size={48} /><h3>{order.vehicle}</h3><p>{order.customer} · Plate {order.plate}</p><p>{order.service} — {order.detail}</p><p>Assigned to {order.mechanic}</p><span className="badge">{order.status}</span></div> : <div className="empty-state"><CarFront size={30} /><p>Work order details not found.</p></div>; })() : ['Add Customer', 'Add Vehicle', 'Add Mechanic', 'New Intake', 'New Invoice', 'Create Invoice', 'Create Quotation', 'Quick Bill', 'Service Sale', 'Parts Sale'].includes(modal) ? <form onSubmit={handleModalSubmit}><p className="form-intro">Enter details to save directly into MongoDB Atlas database.</p><label>{modal === 'Add Mechanic' ? 'Mechanic name' : 'Customer name'}<input name="field1" required placeholder={modal === 'Add Mechanic' ? 'e.g. Tariq Khan' : 'e.g. Sheikh Ahmed'} /></label><label>{modal === 'Add Customer' ? 'Phone number' : modal === 'Add Vehicle' ? 'Vehicle / model' : modal === 'Add Mechanic' ? 'Role / Specialization' : 'Vehicle / description'}<input name="field2" required placeholder={modal === 'Add Customer' ? '+974 5512 3456' : modal === 'Add Vehicle' ? 'e.g. Toyota Land Cruiser' : modal === 'Add Mechanic' ? 'e.g. Engine Specialist' : 'e.g. Toyota Land Cruiser'} /></label><label>{modal === 'Add Vehicle' ? 'Plate number' : modal === 'Add Mechanic' ? 'Phone number' : 'Notes / Address'}{modal === 'Add Vehicle' ? <input name="field3" required placeholder="e.g. 770781" /> : modal === 'Add Mechanic' ? <input name="field3" required placeholder="e.g. 050 123 4567" /> : <textarea name="field3" placeholder="Add address or any customer notes" rows={3} />}</label><button type="submit" className="primary-button"><Plus size={18} />Save to Database</button></form> : <div className="module-placeholder"><Activity size={38} /><h3>{modal}</h3><p>This module is ready for the next development step. Explore work orders and approve quotations on the dashboard now.</p><button className="primary-button" onClick={() => setModal(null)}>Back to dashboard</button></div>}
+        </section>
+      </div>
+    )}
     <SplashScreen />
   </div>;
 }

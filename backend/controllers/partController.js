@@ -25,6 +25,8 @@ const getParts = async (req, res, next) => {
         { name: { $regex: search, $options: 'i' } },
         { brand: { $regex: search, $options: 'i' } },
         { supplier: { $regex: search, $options: 'i' } },
+        { partNumber: { $regex: search, $options: 'i' } },
+        { compatibility: { $regex: search, $options: 'i' } },
       ];
     }
     if (category && category !== 'All Categories') filter.category = category;

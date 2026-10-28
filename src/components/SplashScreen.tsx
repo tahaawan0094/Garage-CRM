@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-const SPLASH_DURATION_MS = 2400;
+const SPLASH_DURATION_MS = 2200;
 
 export default function SplashScreen() {
   const [isVisible, setIsVisible] = useState(true);
@@ -10,7 +10,7 @@ export default function SplashScreen() {
 
   useEffect(() => {
     const startTime = performance.now();
-    const duration = 1800;
+    const duration = 1600;
 
     const interval = setInterval(() => {
       const elapsed = performance.now() - startTime;
@@ -50,8 +50,8 @@ export default function SplashScreen() {
           initial={{ opacity: 1 }}
           exit={{
             opacity: 0,
-            scale: 1.02,
-            transition: { duration: 0.45, ease: "easeInOut" },
+            scale: 1.01,
+            transition: { duration: 0.4, ease: "easeInOut" },
           }}
           style={{
             position: "fixed",
@@ -61,73 +61,62 @@ export default function SplashScreen() {
             flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
-            background: "#16212f",
+            background: "#ffffff",
             userSelect: "none",
           }}
           role="status"
           aria-label="Garage CRM Initializing"
         >
-          {/* Subtle Warm Ambient Glow */}
+          {/* Subtle Light Clean Ambient Vignette */}
           <div
             style={{
               position: "absolute",
               inset: 0,
               background:
-                "radial-gradient(circle at 50% 46%, rgba(255, 99, 28, 0.12) 0%, rgba(22, 33, 47, 0.96) 60%, #16212f 100%)",
+                "radial-gradient(circle at 50% 46%, rgba(255, 99, 28, 0.04) 0%, rgba(248, 250, 252, 0.8) 60%, #ffffff 100%)",
               pointerEvents: "none",
             }}
           />
 
-          {/* Central Logo & Brand Badge */}
+          {/* Central Logo & Brand - Direct display without box */}
           <motion.div
-            initial={{ opacity: 0, y: 12, scale: 0.95 }}
+            initial={{ opacity: 0, y: 10, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
             style={{
               position: "relative",
               zIndex: 2,
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
-              marginBottom: "28px",
+              marginBottom: "26px",
             }}
           >
-            {/* Logo Badge Container */}
-            <div
+            {/* Logo without any box or badge */}
+            <motion.img
+              src={`${import.meta.env.BASE_URL}Garage-crm-logo-light.png?v=${Date.now()}`}
+              alt="Garage CRM Logo"
               style={{
-                width: "92px",
-                height: "92px",
-                borderRadius: "18px",
-                background: "rgba(255, 255, 255, 0.04)",
-                border: "1px solid rgba(255, 255, 255, 0.08)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                boxShadow: "0 10px 30px rgba(0, 0, 0, 0.35)",
-                marginBottom: "18px",
+                width: "125px",
+                height: "125px",
+                objectFit: "contain",
+                display: "block",
+                marginBottom: "16px",
+                filter: "drop-shadow(0 8px 24px rgba(241, 90, 36, 0.25))",
               }}
-            >
-              <img
-                src={`${import.meta.env.BASE_URL}Garage-crm-logo.png`}
-                alt="Garage CRM Logo"
-                style={{
-                  width: "66px",
-                  height: "66px",
-                  objectFit: "contain",
-                  display: "block",
-                }}
-                draggable={false}
-              />
-            </div>
+              draggable={false}
+              animate={{ y: [0, -4, 0] }}
+              transition={{ repeat: Infinity, duration: 2.8, ease: "easeInOut" }}
+            />
 
             {/* Brand Title */}
             <h1
               style={{
                 margin: 0,
-                fontSize: "21px",
+                fontSize: "22px",
                 fontWeight: 800,
                 letterSpacing: "0.04em",
-                color: "#ffffff",
+                color: "#0f172a",
                 display: "flex",
                 alignItems: "center",
                 gap: "5px",
@@ -142,38 +131,39 @@ export default function SplashScreen() {
             <p
               style={{
                 margin: "4px 0 0",
-                fontSize: "10.5px",
+                fontSize: "11px",
                 fontWeight: 600,
-                letterSpacing: "0.12em",
+                letterSpacing: "0.14em",
                 textTransform: "uppercase",
-                color: "#8fa2bb",
+                color: "#64748b",
               }}
             >
               Workshop Management System
             </p>
           </motion.div>
 
-          {/* Clean Progress Bar Container */}
+          {/* Clean Light-Themed Progress Bar */}
           <div
             style={{
               position: "relative",
               zIndex: 2,
-              width: "250px",
+              width: "260px",
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
-              gap: "10px",
+              gap: "9px",
             }}
           >
             {/* Progress Bar Track */}
             <div
               style={{
                 width: "100%",
-                height: "4px",
+                height: "5px",
                 borderRadius: "999px",
-                background: "rgba(255, 255, 255, 0.08)",
+                background: "#e2e8f0",
                 overflow: "hidden",
                 position: "relative",
+                boxShadow: "inset 0 1px 2px rgba(0, 0, 0, 0.05)",
               }}
             >
               <motion.div
@@ -182,7 +172,7 @@ export default function SplashScreen() {
                   width: `${count}%`,
                   borderRadius: "999px",
                   background: "linear-gradient(90deg, #ff631c, #ff8c42)",
-                  boxShadow: "0 0 10px rgba(255, 99, 28, 0.5)",
+                  boxShadow: "0 1px 8px rgba(255, 99, 28, 0.4)",
                   transition: "width 0.08s ease-out",
                 }}
               />
@@ -197,11 +187,11 @@ export default function SplashScreen() {
                 alignItems: "center",
                 fontSize: "11px",
                 fontWeight: 500,
-                color: "#8fa2bb",
+                color: "#64748b",
               }}
             >
               <span>{statusText}</span>
-              <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{count}%</span>
+              <span style={{ color: "#0f172a", fontWeight: 700 }}>{count}%</span>
             </div>
           </div>
         </motion.div>
@@ -209,4 +199,5 @@ export default function SplashScreen() {
     </AnimatePresence>
   );
 }
+
 

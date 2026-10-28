@@ -275,7 +275,7 @@ const vehicleFields: (keyof VehicleFormData)[] = [
   "notes",
 ];
 
-const documentTypes = ["Work Order", "Quotation", "Invoice", "Gate Pass"] as const;
+const documentTypes = ["Quotation", "Gate Pass"] as const;
 type DocumentType = (typeof documentTypes)[number];
 
 function isIntakeFormData(value: unknown): value is IntakeFormData {
@@ -1338,16 +1338,32 @@ function NewIntake(props: {
     setInvoiceNumber(getNextInvoiceId());
     setPayments([]);
     setStep(1);
-    setDocumentType("Work Order");
+    setDocumentType("Quotation");
     notify("A new sample work order is ready.");
   };
 
   return (
     <main className="intake-page">
       <div className="intake-heading">
-        <div className="intake-title">
-          <h1>{step === 9 ? "Payment / Balance" : step === 8 ? "Invoice" : step === 7 ? "Repair Done" : "New Intake"}</h1>
-          <p>{step === 9 ? "Record payments and review the invoice balance." : step === 8 ? "Generate an invoice for completed repair work and record payment." : step === 7 ? "Manage repair completion information and update vehicle status." : "Manage garage service information and job records."}</p>
+        <div className="intake-title" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <span
+            style={{
+              width: "42px",
+              height: "42px",
+              flex: "0 0 42px",
+              display: "grid",
+              placeItems: "center",
+              borderRadius: "50%",
+              background: "#fff0e7",
+              color: "#f15a24",
+            }}
+          >
+            <ClipboardList size={22} />
+          </span>
+          <div>
+            <h1>{step === 9 ? "Payment / Balance" : step === 8 ? "Invoice" : step === 7 ? "Repair Done" : "New Intake"}</h1>
+            <p>{step === 9 ? "Record payments and review the invoice balance." : step === 8 ? "Generate an invoice for completed repair work and record payment." : step === 7 ? "Manage repair completion information and update vehicle status." : "Manage garage service information and job records."}</p>
+          </div>
         </div>
         <div className="intake-heading-meta">
           <strong>Work Order: {form.workOrder || "—"}</strong>
@@ -2458,7 +2474,6 @@ function NewIntake(props: {
                 )}
                 {repairStatus === "Completed" && (
                   <button className="intake-action-button orange" onClick={() => {
-                    setDocumentType("Invoice");
                     setInvoicePreviewTab("Invoice Preview");
                     setStep(8);
                   }}>
@@ -2716,12 +2731,76 @@ function NewIntake(props: {
           ref={previewRef}
           tabIndex={-1}
         >
+          {/* Document Type Switcher Tabs (Quotation, Work Order, Invoice, Gate Pass) */}
+          <div
+            className="intake-preview-doc-tabs"
+            style={{
+              display: "flex",
+              gap: "4px",
+              marginBottom: "8px",
+              padding: "3px",
+              background: "#edf2f7",
+              borderRadius: "7px",
+            }}
+          >
+            {(["Quotation", "Gate Pass"] as const).map((type) => (
+              <button
+                key={type}
+                type="button"
+                style={{
+                  flex: 1,
+                  padding: "7px 10px",
+                  borderRadius: "6px",
+                  border: 0,
+                  background: documentType === type ? "#ffffff" : "transparent",
+                  color: documentType === type ? "#ff631c" : "#64748b",
+                  fontSize: "11px",
+                  fontWeight: documentType === type ? 700 : 600,
+                  boxShadow: documentType === type ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                  transition: "all 0.15s ease",
+                }}
+                onClick={() => setDocumentType(type)}
+              >
+                {type === "Quotation" ? <FileText size={13} /> : <ClipboardList size={13} />}
+                <span>{type}</span>
+              </button>
+            ))}
+          </div>
+
           <article className="intake-preview-paper">
             <header className="intake-paper-header">
               <div>
-                <strong>{step >= 8 ? "INVOICE" : step === 7 ? "REPAIR SUMMARY" : "QUOTATION"}</strong>
-                <b>{step >= 8 ? invoiceNumber : quoteNumber}</b>
-                {step >= 8 ? (
+                <strong>
+                  {documentType === "Gate Pass"
+                    ? "VEHICLE GATE PASS"
+                    : step >= 8
+                    ? "INVOICE"
+                    : step === 7
+                    ? "REPAIR SUMMARY"
+                    : "QUOTATION"}
+                </strong>
+                <b>
+                  {documentType === "Gate Pass"
+                    ? `GP-${form.workOrder || "0001"}`
+                    : step >= 8
+                    ? invoiceNumber
+                    : quoteNumber}
+                </b>
+                {documentType === "Gate Pass" ? (
+                  <>
+                    <span className="intake-paper-status approved" style={{ background: "#e1f7ea", color: "#078348" }}>
+                      Authorized for Exit
+                    </span>
+                    <small>Date: {formatDate(completionDate || repairDate || form.date)}</small>
+                    <small>Exit Gate: Workshop Gate 1</small>
+                  </>
+                ) : step >= 8 ? (
                   <>
                     <span className="intake-paper-status approved">Repair Completed</span>
                     <small>Date: {formatDate(invoiceDate)}</small>
@@ -2733,13 +2812,13 @@ function NewIntake(props: {
                     <small>Repair Date: {formatDate(repairDate)}</small>
                     {completionDate && <small>Completed Date: {formatDate(completionDate)}</small>}
                   </>
-                ) : documentType === "Quotation" ? (
+                ) : (
                   <>
                     <span className={`intake-paper-status ${quotationStatus === "Approved" ? "approved" : quotationStatus === "Rejected" ? "rejected" : quotationStatus === "Pending" ? "pending" : ""}`}>{quotationStatus}</span>
                     <small>Date: {formatDate(quotationDate)}</small>
                     <small>Valid Until: {formatDate(quotationValidUntil)}</small>
                   </>
-                ) : <small>Date: {formatDate(form.date)}</small>}
+                )}
               </div>
             </header>
 
@@ -2761,7 +2840,60 @@ function NewIntake(props: {
               </section>
             </div>
 
-            {step < 8 && <section className="intake-paper-complaint">
+            {documentType === "Gate Pass" ? (
+              <div className="intake-gatepass-section" style={{ marginTop: "12px" }}>
+                <div className="intake-paper-table-wrap">
+                  <table className="intake-paper-table">
+                    <thead>
+                      <tr>
+                        <th>Security &amp; Gate Clearance Checklist</th>
+                        <th style={{ textAlign: "center", width: "95px" }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>Work Order Services Completed ({form.workOrder || "WO-0001"})</td>
+                        <td style={{ textAlign: "center", color: "#078348", fontWeight: 700 }}>VERIFIED</td>
+                      </tr>
+                      <tr>
+                        <td>Invoice Payment &amp; Accounting Clearance ({invoiceNumber || "INV-0001"})</td>
+                        <td style={{ textAlign: "center", color: "#078348", fontWeight: 700 }}>CLEARED</td>
+                      </tr>
+                      <tr>
+                        <td>Vehicle Road Test &amp; Multi-Point Inspection</td>
+                        <td style={{ textAlign: "center", color: "#078348", fontWeight: 700 }}>PASSED</td>
+                      </tr>
+                      <tr>
+                        <td>Vehicle Keys, Documents &amp; Belongings Handed Over</td>
+                        <td style={{ textAlign: "center", color: "#078348", fontWeight: 700 }}>RELEASED</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <section className="intake-paper-notes" style={{ marginTop: "10px" }}>
+                  <h3>Gate Pass Authorization</h3>
+                  <p>Vehicle is inspected, road-tested, and fully authorized to exit the workshop premises.</p>
+                  {selectedServices.length > 0 && <small>Services performed: {selectedServices.join(", ")}</small>}
+                  <p>Service Advisor: {form.advisor || "Ali Hassan"} · Mechanic: {form.mechanic || "M. Khan"}</p>
+                </section>
+
+                <div className="intake-paper-signature" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginTop: "14px" }}>
+                  <div>
+                    <strong>Customer Handover Sign:</strong>
+                    <span style={{ display: "block", borderBottom: "1px dashed #cbd5e1", height: "26px", margin: "4px 0" }} />
+                    <small>Date: __________________</small>
+                  </div>
+                  <div>
+                    <strong>Gate Security Officer:</strong>
+                    <span style={{ display: "block", borderBottom: "1px dashed #cbd5e1", height: "26px", margin: "4px 0" }} />
+                    <small>Sign &amp; Stamp: __________________</small>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
+                {step < 8 && <section className="intake-paper-complaint">
               <h3>Customer Complaint</h3>
               <p>{complaint || "No customer complaint entered."}</p>
               {selectedServices.length > 0 && <small>Requested services: {selectedServices.join(", ")}</small>}
@@ -2935,6 +3067,8 @@ function NewIntake(props: {
               <span />
               <small>Date: __________________</small>
             </div>}
+              </>
+            )}
           </article>
 
           <div className="intake-preview-controls" aria-hidden="true">
@@ -2953,7 +3087,7 @@ function NewIntake(props: {
           <div className="intake-preview-actions">
             <button className="blue" onClick={() => window.print()}>
               <Printer size={16} />
-              Print {step >= 8 ? "Invoice" : documentType}
+              Print {documentType}
             </button>
             <button
               className="outline"
