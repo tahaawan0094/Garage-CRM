@@ -8,10 +8,10 @@ const {
 
 const createRules = [
   body('name').notEmpty().withMessage('Name is required').trim(),
-  body('phone').notEmpty().withMessage('Phone is required').trim(),
-  body('type').optional().isIn(['Individual', 'Fleet', 'Corporate']),
-  body('status').optional().isIn(['Active', 'VIP', 'Inactive', 'Corporate']),
-  body('email').optional().isEmail().withMessage('Invalid email format'),
+  body('phone').optional({ checkFalsy: true }).trim(),
+  body('type').optional({ checkFalsy: true }).isIn(['Individual', 'Fleet', 'Corporate']),
+  body('status').optional({ checkFalsy: true }).isIn(['Active', 'VIP', 'Inactive', 'Corporate']),
+  body('email').optional({ checkFalsy: true }).isEmail().withMessage('Invalid email format'),
 ];
 
 router.get('/', getCustomers);

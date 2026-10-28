@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { quotationsApi } from "../lib/api";
+import { quotationsApi, invoicesApi, workOrdersApi } from "../lib/api";
+import { getNextInvoiceId, commitInvoiceId } from "../lib/sequence";
 import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
 import {
   Activity,
@@ -51,7 +52,15 @@ const statusClass: Record<QuoteStatus, string> = {
 };
 const money = (value: number) => `QAR ${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-function Quotations({ notify, refreshTrigger }: { notify: (message: string) => void; refreshTrigger?: number }) {
+function Quotations({
+  notify,
+  refreshTrigger,
+  onSynced,
+}: {
+  notify: (message: string) => void;
+  refreshTrigger?: number;
+  onSynced?: () => void;
+}) {
   const [quotes, setQuotes] = useState(initialQuotes);
   const [selectedId, setSelectedId] = useState("");
   const [page, setPage] = useState(1);
@@ -88,7 +97,7 @@ function Quotations({ notify, refreshTrigger }: { notify: (message: string) => v
     approved: quotes.filter((q) => q.status === "Approved").length,
   };
 
-  const decide = (decision: "Approved" | "Rejected", targetQuoteId?: string) => {
+  const decide = async (decision: "Approved" | "Rejected", targetQuoteId?: string) => {
     const targetId = targetQuoteId || selectedQuote?.id;
     if (!targetId) return;
     const target = quotes.find((q) => q.id === targetId);
@@ -99,11 +108,50 @@ function Quotations({ notify, refreshTrigger }: { notify: (message: string) => v
     // Sync approval/rejection to MongoDB Atlas
     if (decision === "Approved") {
       quotationsApi.approve(targetId).catch((err) => console.warn("Approve sync error:", err));
+
+      const newInvId = getNextInvoiceId();
+      commitInvoiceId(newInvId);
+      invoicesApi.create({
+        invoiceId: newInvId,
+        customer: target.customer,
+        vehicle: target.vehicle,
+        plate: target.plate || 'TBD',
+        year: target.year || '2024',
+        service: target.service,
+        detail: target.detail || '',
+        amount: target.amount,
+        total: target.amount,
+        status: 'Pending',
+        advisor: target.advisor || 'Ali Hassan',
+        date: new Date().toLocaleDateString('en-GB'),
+        items: target.items || [],
+        workOrder: target.id,
+      }).then(() => {
+        onSynced?.();
+      }).catch(err => console.warn("Invoice auto-creation sync error:", err));
+
+      workOrdersApi.update(target.id.replace('QT-', 'WO-'), { status: 'In Progress' }).catch(() => {
+        workOrdersApi.create({
+          workOrderId: target.id.replace('QT-', 'WO-'),
+          customer: target.customer,
+          vehicle: target.vehicle,
+          plate: target.plate || 'TBD',
+          year: target.year || '2024',
+          service: target.service,
+          detail: target.detail || '',
+          mechanic: target.advisor || 'Ali Hassan',
+          status: 'In Progress',
+          total: target.amount || 0,
+        }).catch(() => {});
+      });
+
+      notify(`Quotation ${targetId} approved! Invoice ${newInvId} created in Invoices.`);
+      onSynced?.();
     } else {
       quotationsApi.reject(targetId).catch((err) => console.warn("Reject sync error:", err));
+      notify(`${targetId} rejected.`);
+      onSynced?.();
     }
-
-    notify(`${targetId} ${decision.toLowerCase()}.`);
   };
 
   const handleConfirmDelete = async () => {

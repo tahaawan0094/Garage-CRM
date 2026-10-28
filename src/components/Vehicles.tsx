@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { vehiclesApi } from "../lib/api";
+import ViewInfoModal, { type ViewInfoTarget } from "./ViewInfoModal";
 import {
   Activity,
   CalendarDays,
@@ -10,7 +11,6 @@ import {
   Clock3,
   Eye,
   FileText,
-  MoreVertical,
   Search,
   UserRound,
   Wrench,
@@ -46,14 +46,15 @@ const statusClass: Record<VehicleStatus, string> = {
 };
 const money = (value: number) => `QAR ${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-function Vehicles(props: { notify: (message: string) => void; onAdd?: () => void; onCreateWorkOrder: () => void; refreshTrigger?: number }) {
-  const { notify, onCreateWorkOrder, refreshTrigger } = props;
+function Vehicles(props: { notify: (message: string) => void; onAdd?: () => void; onCreateWorkOrder?: () => void; refreshTrigger?: number }) {
+  const { notify, refreshTrigger } = props;
   const [vehicles, setVehicles] = useState(initialVehicles);
   const [selectedId, setSelectedId] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All Status");
   const [typeFilter, setTypeFilter] = useState("All Vehicle Types");
   const [page, setPage] = useState(1);
+  const [viewInfoTarget, setViewInfoTarget] = useState<ViewInfoTarget | null>(null);
 
   useEffect(() => {
     vehiclesApi.getAll({ limit: 100 })
@@ -80,11 +81,6 @@ function Vehicles(props: { notify: (message: string) => void; onAdd?: () => void
     inService: vehicles.filter((v) => v.status === "In Service").length,
     ready: vehicles.filter((v) => v.status === "Ready").length,
     due: vehicles.filter((v) => v.status === "Due").length,
-  };
-  const showHistory = () => selectedVehicle && notify(`Showing the latest ${selectedVehicle.history.length} service records for ${selectedVehicle.model}.`);
-  const startWorkOrder = () => {
-    if (!selectedVehicle) return;
-    onCreateWorkOrder();
   };
 
   return (
@@ -125,7 +121,19 @@ function Vehicles(props: { notify: (message: string) => void; onAdd?: () => void
                     <td><span className="vehicle-model-cell"><CarFront size={31} /><span>{vehicle.model}</span></span></td>
                     <td>{vehicle.year}</td><td>{vehicle.mileage}</td><td>{vehicle.lastService}</td>
                     <td><span className={`vehicle-status-badge ${statusClass[vehicle.status]}`}>{vehicle.status}</span></td>
-                    <td><button className="vehicle-row-action" aria-label={`View ${vehicle.id}`} onClick={(event) => { event.stopPropagation(); setSelectedId(vehicle.id); }}><Eye size={15} /></button><button className="vehicle-row-action" aria-label={`More actions for ${vehicle.id}`} onClick={(event) => { event.stopPropagation(); notify(`More actions for ${vehicle.id} are not available in this frontend preview.`); }}><MoreVertical size={15} /></button></td>
+                    <td>
+                      <button
+                        className="crm-table-view-btn"
+                        aria-label={`View info for ${vehicle.model} (${vehicle.plate})`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setViewInfoTarget({ type: "vehicle", data: vehicle });
+                        }}
+                      >
+                        <Eye size={13} />
+                        <span>View Info</span>
+                      </button>
+                    </td>
                   </tr>
                 ))}
                 {filteredVehicles.length === 0 && <tr><td colSpan={10} className="vehicle-empty">No vehicles match the selected filters.</td></tr>}
@@ -136,7 +144,7 @@ function Vehicles(props: { notify: (message: string) => void; onAdd?: () => void
         </section>
         {selectedVehicle && (
           <aside className="vehicle-detail-card" aria-label={`Vehicle details for ${selectedVehicle.id}`}>
-            <header><div><FileText size={16} /><strong>Vehicle Details</strong></div><button onClick={() => notify("Vehicle editing is not available in this frontend preview.")}>Edit</button></header>
+            <header><div><FileText size={16} /><strong>Vehicle Details</strong></div></header>
             <div className="vehicle-detail-heading"><strong>{selectedVehicle.model} - {selectedVehicle.year}</strong><span className={`vehicle-status-badge ${statusClass[selectedVehicle.status]}`}>{selectedVehicle.status}</span></div>
             <div className="vehicle-detail-overview">
               <span className={`vehicle-large-illustration ${selectedVehicle.color.toLowerCase().replaceAll(" ", "-")}`}><CarFront size={76} strokeWidth={1.4} /></span>
@@ -153,17 +161,28 @@ function Vehicles(props: { notify: (message: string) => void; onAdd?: () => void
               <p>{selectedVehicle.notes}</p>
             </section>
             <section className="vehicle-history">
-              <h3><Clock3 size={15} />Service History (Latest 5)<button onClick={showHistory}>View All</button></h3>
+              <h3><Clock3 size={15} />Service History (Latest 5)<button onClick={() => setViewInfoTarget({ type: "vehicle", data: selectedVehicle })}>View All</button></h3>
               <div className="vehicle-history-scroll"><table><thead><tr><th>Date</th><th>Job Type</th><th>Mileage</th><th>Amount</th></tr></thead><tbody>{selectedVehicle.history.map((record) => <tr key={`${selectedVehicle.id}-${record.date}`}><td>{record.date}</td><td>{record.job}</td><td>{record.mileage}</td><td>{money(record.amount)}</td></tr>)}</tbody></table></div>
             </section>
-            <div className="vehicle-detail-actions">
-              <button onClick={showHistory}><Clock3 size={14} />View History</button>
-              <button onClick={() => notify("Vehicle editing is not available in this frontend preview.")}><Wrench size={14} />Edit Vehicle</button>
-              <button className="create-work-order" onClick={startWorkOrder}><FileText size={14} />Create Work Order</button>
+            <div className="vehicle-detail-actions single-action">
+              <button
+                type="button"
+                className="crm-view-info-card-btn"
+                onClick={() => setViewInfoTarget({ type: "vehicle", data: selectedVehicle })}
+              >
+                <Eye size={14} />
+                <span>View Full Info &amp; History</span>
+              </button>
             </div>
           </aside>
         )}
       </div>
+      <ViewInfoModal
+        isOpen={!!viewInfoTarget}
+        onClose={() => setViewInfoTarget(null)}
+        target={viewInfoTarget}
+        notify={notify}
+      />
     </main>
   );
 }

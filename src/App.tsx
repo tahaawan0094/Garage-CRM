@@ -12,6 +12,7 @@ import PartsInventory from './components/PartsInventory';
 import Mechanics from './components/Mechanics';
 import Reports from './components/Reports';
 import { workOrdersApi, quotationsApi, customersApi, vehiclesApi, partsApi, mechanicsApi, invoicesApi } from './lib/api';
+import { getNextInvoiceId, commitInvoiceId } from './lib/sequence';
 
 const nav: [string, LucideIcon][] = [['Dashboard', Home], ['POS Billing', ShoppingCart], ['New Intake', Plus], ['Work Orders', Wrench], ['Quotations', FileText], ['Invoices', FileText], ['Vehicles', CarFront], ['Customers', Users], ['Parts Inventory', Box], ['Mechanics', Users], ['Reports', ChartColumn], ['Settings', Settings]];
 const money = (value: number) => `QAR ${value.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
@@ -98,14 +99,42 @@ function App() {
     }
     open(label);
   };
-  const decideQuote = (id: string, decision: string) => {
+  const decideQuote = async (id: string, decision: string) => {
+    const target = quotes.find(quote => quote.id === id);
     setQuotes(current => current.filter(quote => quote.id !== id));
     if (decision === 'Approved') {
       quotationsApi.approve(id).catch(err => console.warn('Approve sync error:', err));
+      if (target) {
+        try {
+          const newInvId = getNextInvoiceId();
+          commitInvoiceId(newInvId);
+          await invoicesApi.create({
+            invoiceId: newInvId,
+            customer: target.customer,
+            vehicle: target.vehicle,
+            plate: target.plate || 'TBD',
+            year: target.year || '2024',
+            service: target.service,
+            detail: target.detail || '',
+            amount: target.amount,
+            total: target.amount,
+            status: 'Pending',
+            advisor: target.advisor || 'Ali Hassan',
+            date: new Date().toLocaleDateString('en-GB'),
+            items: target.items || [],
+            workOrder: target.id,
+          });
+        } catch (invErr) {
+          console.warn('Invoice generation error:', invErr);
+        }
+      }
+      setRefreshTrigger(prev => prev + 1);
+      setNotice(`Quotation ${id} approved and invoice generated.`);
     } else {
       quotationsApi.reject(id).catch(err => console.warn('Reject sync error:', err));
+      setRefreshTrigger(prev => prev + 1);
+      setNotice(`${id} ${decision.toLowerCase()}.`);
     }
-    setNotice(`${id} ${decision.toLowerCase()}.`);
   };
 
   const handleModalSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -209,16 +238,15 @@ function App() {
       onMouseLeave={() => setSidebarHovered(false)}
     >
       <div className="sidebar-header">
-        <a className="brand" href="#" aria-label="Garage Workspace dashboard" onClick={(e) => { e.preventDefault(); navigate('Dashboard'); }}>
-          <div className="brand-logo-container">
-            <img
-              className="brand-logo-full"
-              src={`${import.meta.env.BASE_URL}garage-workspace-logo.png`}
-              alt="Garage Workspace — Auto Care & Service"
-            />
-            <div className="brand-mini-badge" title="Garage Workspace">
-              <Wrench size={19} />
-            </div>
+        <a className="brand" href="#" aria-label="Garage CRM dashboard" onClick={(e) => { e.preventDefault(); navigate('Dashboard'); }}>
+          <img
+            className="brand-logo-icon"
+            src={`${import.meta.env.BASE_URL}Garage-crm-logo.png`}
+            alt="Garage CRM"
+          />
+          <div className="brand-title-wrap">
+            <span className="brand-title">GARAGE <span className="brand-accent">CRM</span></span>
+            <span className="brand-subtitle">Workshop System</span>
           </div>
         </a>
         <button
@@ -228,10 +256,25 @@ function App() {
           aria-label={sidebarLocked ? "Unlock sidebar" : "Lock sidebar"}
           onClick={toggleSidebarLock}
         >
-          {sidebarLocked ? <Lock size={14} /> : <Unlock size={14} />}
+          {sidebarLocked ? <Lock size={13} /> : <Unlock size={13} />}
         </button>
       </div>
-      <nav aria-label="Main navigation">{nav.map(([label, Icon]) => <button key={label} className={`nav-item ${label === page ? 'selected' : ''}`} onClick={() => navigate(label)} title={label}><Icon size={21} strokeWidth={1.8} /><span>{label}</span></button>)}</nav>
+      <nav aria-label="Main navigation">
+        {nav.map(([label, Icon]) => {
+          const isSelected = label === page;
+          return (
+            <button
+              key={label}
+              className={`nav-item ${isSelected ? 'selected' : ''}`}
+              onClick={() => navigate(label)}
+              title={label}
+            >
+              <Icon size={18} strokeWidth={isSelected ? 2 : 1.75} />
+              <span>{label}</span>
+            </button>
+          );
+        })}
+      </nav>
     </aside>
     {sidebar && <button aria-label="Close navigation" className="sidebar-scrim" onClick={() => setSidebar(false)} />}
     <div className={`main-shell ${!isSidebarExpanded ? 'sidebar-minimized' : 'sidebar-expanded'}`}>
@@ -244,6 +287,7 @@ function App() {
       <div hidden={page !== 'New Intake'}>
         <NewIntake
           notify={setNotice}
+          onSynced={() => setRefreshTrigger(prev => prev + 1)}
           startAtQuotation={quotationRequested && page === 'New Intake'}
           onQuotationStarted={() => setQuotationRequested(false)}
           onOpenWorkOrders={() => {
@@ -263,7 +307,11 @@ function App() {
         />
       </div>
       <div hidden={page !== 'Quotations'}>
-        <Quotations notify={setNotice} refreshTrigger={refreshTrigger} />
+        <Quotations
+          notify={setNotice}
+          refreshTrigger={refreshTrigger}
+          onSynced={() => setRefreshTrigger(prev => prev + 1)}
+        />
       </div>
       <div hidden={page !== 'Invoices'}>
         <Invoices

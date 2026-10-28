@@ -30,7 +30,7 @@ const customerSchema = new mongoose.Schema(
     customerId: { type: String, unique: true },            // e.g. CUST-001
     name: { type: String, required: true, trim: true },
     initials: { type: String, default: '' },
-    phone: { type: String, required: true, trim: true },
+    phone: { type: String, default: '', trim: true },
     email: { type: String, trim: true, lowercase: true, default: '' },
     address: { type: String, default: '' },
     type: {

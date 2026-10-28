@@ -58,7 +58,7 @@ const workOrderSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['In Progress', 'Awaiting Parts', 'Ready for Delivery', 'Completed', 'Released', 'Cancelled', 'Invoiced'],
+      enum: ['In Progress', 'Awaiting Parts', 'Ready for Delivery', 'Completed', 'Released', 'Cancelled', 'Invoiced', 'Pending', 'Awaiting Approval'],
       default: 'In Progress',
     },
     expectedDate: { type: String, default: '' },

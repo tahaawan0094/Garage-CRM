@@ -55,6 +55,17 @@ const getCustomerById = async (req, res, next) => {
 // POST /api/customers
 const createCustomer = async (req, res, next) => {
   try {
+    if (req.body.name) {
+      const existing = await Customer.findOne({ name: { $regex: `^${req.body.name.trim()}$`, $options: 'i' } });
+      if (existing) {
+        if (req.body.phone && (!existing.phone || existing.phone === 'N/A')) existing.phone = req.body.phone;
+        if (req.body.email && !existing.email) existing.email = req.body.email;
+        if (req.body.address && !existing.address) existing.address = req.body.address;
+        await existing.save();
+        return sendSuccess(res, existing, 'Customer updated successfully', 200);
+      }
+    }
+
     const customerId = req.body.customerId || (await generateId('customer', 'CUST', 3));
     const customer = new Customer({ ...req.body, customerId });
     await customer.save();

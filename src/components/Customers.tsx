@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { customersApi } from "../lib/api";
+import ViewInfoModal, { type ViewInfoTarget } from "./ViewInfoModal";
 import {
   Activity,
   CalendarDays,
@@ -11,7 +12,6 @@ import {
   FileText,
   Mail,
   MapPin,
-  MoreVertical,
   Phone,
   Search,
   UserRound,
@@ -47,13 +47,14 @@ const money = (value: number) => `QAR ${value.toLocaleString("en-US", { minimumF
 const statusClass: Record<CustomerStatus, string> = { Active: "active", VIP: "vip", Inactive: "inactive", Corporate: "corporate" };
 const typeClass: Record<CustomerType, string> = { Individual: "individual", Fleet: "fleet", Corporate: "corporate" };
 
-function Customers({ notify, onCreateWorkOrder, refreshTrigger }: { notify: (message: string) => void; onAdd?: () => void; onCreateWorkOrder: () => void; refreshTrigger?: number }) {
+function Customers({ notify, onCreateWorkOrder: _onCreateWorkOrder, refreshTrigger }: { notify: (message: string) => void; onAdd?: () => void; onCreateWorkOrder?: () => void; refreshTrigger?: number }) {
   const [customers, setCustomers] = useState(initialCustomers);
   const [selectedId, setSelectedId] = useState("");
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("All Customer Types");
   const [statusFilter, setStatusFilter] = useState("All Status");
   const [page, setPage] = useState(1);
+  const [viewInfoTarget, setViewInfoTarget] = useState<ViewInfoTarget | null>(null);
 
   useEffect(() => {
     customersApi.getAll({ limit: 200 })
@@ -113,7 +114,19 @@ function Customers({ notify, onCreateWorkOrder, refreshTrigger }: { notify: (mes
                     <td>{customer.phone}</td><td><span className={`customer-type-badge ${typeClass[customer.type]}`}>{customer.type}</span></td>
                     <td>{customer.vehicleCount}</td><td>{customer.lastVisit}</td><td className="customer-amount">{money(customer.totalSpent)}</td>
                     <td><span className={`customer-status-badge ${statusClass[customer.status]}`}>{customer.status}</span></td>
-                    <td><button className="customer-row-action" aria-label={`View ${customer.id}`} onClick={(event) => { event.stopPropagation(); setSelectedId(customer.id); }}><Eye size={15} /></button><button className="customer-row-action" aria-label={`More actions for ${customer.id}`} onClick={(event) => { event.stopPropagation(); notify(`More actions for ${customer.id} are not available in this frontend preview.`); }}><MoreVertical size={15} /></button></td>
+                    <td>
+                      <button
+                        className="crm-table-view-btn"
+                        aria-label={`View info for ${customer.name}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setViewInfoTarget({ type: "customer", data: customer });
+                        }}
+                      >
+                        <Eye size={13} />
+                        <span>View Info</span>
+                      </button>
+                    </td>
                   </tr>
                 ))}
                 {filteredCustomers.length === 0 && <tr><td colSpan={10} className="customer-empty">No customers match the selected filters.</td></tr>}
@@ -124,7 +137,7 @@ function Customers({ notify, onCreateWorkOrder, refreshTrigger }: { notify: (mes
         </section>
         {selectedCustomer && (
           <aside className="customer-detail-card" aria-label={`Customer details for ${selectedCustomer.id}`}>
-            <header><div><FileText size={16} /><strong>Customer Details</strong></div><button onClick={() => notify("Customer editing is not available in this frontend preview.")}>Edit</button></header>
+            <header><div><FileText size={16} /><strong>Customer Details</strong></div></header>
             <div className="customer-detail-heading"><span className="customer-large-avatar">{selectedCustomer.initials}</span><div><strong>{selectedCustomer.name}</strong><span><Phone size={13} />{selectedCustomer.phone}</span><span><Mail size={13} />{selectedCustomer.email}</span><span><MapPin size={13} />{selectedCustomer.address}</span></div><span className={`customer-status-badge ${statusClass[selectedCustomer.status]}`}>{selectedCustomer.status}</span></div>
             <div className="customer-detail-facts">
               <div><UserRound size={15} /><span>Customer Type</span><strong>{selectedCustomer.type}</strong></div>
@@ -136,21 +149,32 @@ function Customers({ notify, onCreateWorkOrder, refreshTrigger }: { notify: (mes
             </div>
             <section className="customer-notes"><h3><FileText size={15} />Recent Notes</h3><p>{selectedCustomer.notes}</p></section>
             <section className="customer-associated-vehicles">
-              <h3><CarFront size={16} />Associated Vehicles ({selectedCustomer.vehicleCount})<button onClick={() => notify(`Showing vehicles for ${selectedCustomer.name}.`)}>View All</button></h3>
+              <h3><CarFront size={16} />Associated Vehicles ({selectedCustomer.vehicleCount})<button onClick={() => setViewInfoTarget({ type: "customer", data: selectedCustomer })}>View All</button></h3>
               <div className="customer-detail-table-scroll"><table><thead><tr><th>Vehicle</th><th>Year</th><th>Plate No.</th><th>Last Service</th></tr></thead><tbody>{selectedCustomer.vehicles.map((vehicle) => <tr key={`${selectedCustomer.id}-${vehicle.plate}`}><td>{vehicle.model}</td><td>{vehicle.year}</td><td>{vehicle.plate}</td><td>{vehicle.lastService}</td></tr>)}</tbody></table></div>
             </section>
             <section className="customer-service-history">
-              <h3><Clock3 size={15} />Service History (Latest 3)<button onClick={() => notify(`Showing service history for ${selectedCustomer.name}.`)}>View All</button></h3>
+              <h3><Clock3 size={15} />Service History (Latest 3)<button onClick={() => setViewInfoTarget({ type: "customer", data: selectedCustomer })}>View All</button></h3>
               <div className="customer-detail-table-scroll"><table><thead><tr><th>Date</th><th>Vehicle</th><th>Service</th><th>Amount</th></tr></thead><tbody>{selectedCustomer.history.map((record) => <tr key={`${selectedCustomer.id}-${record.date}`}><td>{record.date}</td><td>{record.vehicle}</td><td>{record.service}</td><td>{money(record.amount)}</td></tr>)}</tbody></table></div>
             </section>
-            <div className="customer-detail-actions">
-              <button onClick={() => notify(`Showing service history for ${selectedCustomer.name}.`)}><Clock3 size={14} />View History</button>
-              <button onClick={() => notify("Customer editing is not available in this frontend preview.")}><UserRound size={14} />Edit Customer</button>
-              <button className="customer-work-order" onClick={onCreateWorkOrder}><FileText size={14} />Create Work Order</button>
+            <div className="customer-detail-actions single-action">
+              <button
+                type="button"
+                className="crm-view-info-card-btn"
+                onClick={() => setViewInfoTarget({ type: "customer", data: selectedCustomer })}
+              >
+                <Eye size={14} />
+                <span>View Full Info &amp; History</span>
+              </button>
             </div>
           </aside>
         )}
       </div>
+      <ViewInfoModal
+        isOpen={!!viewInfoTarget}
+        onClose={() => setViewInfoTarget(null)}
+        target={viewInfoTarget}
+        notify={notify}
+      />
     </main>
   );
 }

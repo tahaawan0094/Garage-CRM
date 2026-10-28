@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoicesApi } from "../lib/api";
 import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
+import ViewInfoModal, { type ViewInfoTarget } from "./ViewInfoModal";
 import {
   AlertCircle,
   Activity,
@@ -14,7 +15,6 @@ import {
   CreditCard,
   Eye,
   FileText,
-  Pencil,
   Printer,
   Search,
   Share2,
@@ -65,6 +65,7 @@ function Invoices(props: { notify: (message: string) => void; onCreate?: () => v
   const [page, setPage] = useState(1);
   const [deleteModalInvoice, setDeleteModalInvoice] = useState<Invoice | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [viewInfoTarget, setViewInfoTarget] = useState<ViewInfoTarget | null>(null);
 
   useEffect(() => {
     invoicesApi.getAll({ limit: 50 })
@@ -163,8 +164,17 @@ function Invoices(props: { notify: (message: string) => void; onCreate?: () => v
                     <td><span className={`invoice-status-badge ${statusClass[invoice.status]}`}>{invoice.status}</span></td>
                     <td>{invoice.date}</td><td className="invoice-amount">{money(invoice.amount)}</td>
                     <td>
-                      <button className="invoice-row-action" aria-label={`View ${invoice.id}`} onClick={(event) => { event.stopPropagation(); setSelectedId(invoice.id); }}>
-                        <Eye size={15} />
+                      <button
+                        className="crm-table-view-btn"
+                        aria-label={`View info for ${invoice.id}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setSelectedId(invoice.id);
+                          setViewInfoTarget({ type: "invoice", data: invoice });
+                        }}
+                      >
+                        <Eye size={13} />
+                        <span>View Info</span>
                       </button>
                     </td>
                   </tr>
@@ -177,11 +187,11 @@ function Invoices(props: { notify: (message: string) => void; onCreate?: () => v
         </section>
         {selectedInvoice && (
           <aside className="invoice-detail-card" aria-label={`Invoice details for ${selectedInvoice.id}`}>
-            <header><div><FileText size={16} /><strong>Invoice Details</strong></div><button onClick={() => notify("Invoice editing is not available in this frontend preview.")}><Pencil size={13} />Edit</button></header>
+            <header><div><FileText size={16} /><strong>Invoice Details</strong></div></header>
             <div className="invoice-detail-number"><strong>{selectedInvoice.id}</strong><span className={`invoice-status-badge ${statusClass[selectedInvoice.status]}`}>{selectedInvoice.status}</span></div>
             <small className="invoice-created-at">Created: {selectedInvoice.date}, 10:30 AM</small>
             <section className="invoice-detail-block">
-              <h3><UserRound size={15} />Customer <button onClick={() => notify("Customer records are not available in this frontend preview.")}>View Customer</button></h3>
+              <h3><UserRound size={15} />Customer <button onClick={() => setViewInfoTarget({ type: "invoice", data: selectedInvoice })}>View Info</button></h3>
               <div className="invoice-customer-line"><span className="invoice-customer-avatar">{selectedInvoice.customer.split(" ").map((part) => part[0]).slice(0, 2).join("")}</span><div><strong>{selectedInvoice.customer}</strong><span>{selectedInvoice.phone}</span><span>{selectedInvoice.email}</span></div></div>
             </section>
             <section className="invoice-detail-block">
@@ -199,23 +209,34 @@ function Invoices(props: { notify: (message: string) => void; onCreate?: () => v
               </tbody></table></div>
               <div className="invoice-detail-totals"><div><span>Subtotal</span><strong>{money(selectedInvoice.amount)}</strong></div><div><span>VAT (5%)</span><strong>{money(selectedInvoice.amount * 0.05)}</strong></div><div><span>Discount (-)</span><strong className="negative">{money(selectedInvoice.discount)}</strong></div><div className="grand"><strong>Grand Total</strong><strong>{money(selectedInvoice.amount)}</strong></div></div>
             </section>
-            <div className="invoice-detail-actions">
-              <button onClick={() => window.print()}><Printer size={14} />Reprint Invoice</button>
-              <button onClick={() => {
-                if (navigator.clipboard) {
-                  navigator.clipboard.writeText(`${window.location.origin}/#invoice-${selectedInvoice.id}`);
-                }
-                notify(`Invoice link for ${selectedInvoice.id} copied.`);
-              }}><Share2 size={14} />Share</button>
+            <div className="invoice-detail-actions-wrap" style={{ marginTop: "8px" }}>
               <button
-                style={{ borderColor: "#fecaca", background: "#fff1f2", color: "#e11d48", fontWeight: 600 }}
-                onClick={() => setDeleteModalInvoice(selectedInvoice)}
+                type="button"
+                className="crm-view-info-card-btn"
+                style={{ width: "100%", marginBottom: "8px" }}
+                onClick={() => setViewInfoTarget({ type: "invoice", data: selectedInvoice })}
               >
-                <Trash2 size={14} />Delete Invoice
+                <Eye size={14} />
+                <span>View Full Info &amp; History</span>
               </button>
-              {selectedInvoice.status !== "Paid" && (
-                <button className="mark-paid" onClick={() => markPaid()}><Check size={14} />Mark Paid</button>
-              )}
+              <div className="invoice-detail-actions" style={{ marginTop: 0 }}>
+                <button onClick={() => window.print()}><Printer size={14} />Reprint Invoice</button>
+                <button onClick={() => {
+                  if (navigator.clipboard) {
+                    navigator.clipboard.writeText(`${window.location.origin}/#invoice-${selectedInvoice.id}`);
+                  }
+                  notify(`Invoice link for ${selectedInvoice.id} copied.`);
+                }}><Share2 size={14} />Share</button>
+                <button
+                  style={{ borderColor: "#fecaca", background: "#fff1f2", color: "#e11d48", fontWeight: 600 }}
+                  onClick={() => setDeleteModalInvoice(selectedInvoice)}
+                >
+                  <Trash2 size={14} />Delete Invoice
+                </button>
+                {selectedInvoice.status !== "Paid" && (
+                  <button className="mark-paid" onClick={() => markPaid()}><Check size={14} />Mark Paid</button>
+                )}
+              </div>
             </div>
           </aside>
         )}
@@ -334,6 +355,13 @@ function Invoices(props: { notify: (message: string) => void; onCreate?: () => v
         onConfirm={handleConfirmDelete}
         onCancel={() => setDeleteModalInvoice(null)}
         isDeleting={isDeleting}
+      />
+
+      <ViewInfoModal
+        isOpen={!!viewInfoTarget}
+        onClose={() => setViewInfoTarget(null)}
+        target={viewInfoTarget}
+        notify={notify}
       />
     </main>
   );

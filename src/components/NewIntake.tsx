@@ -466,12 +466,14 @@ function NewIntake(props: {
   onOpenWorkOrders?: () => void;
   startAtQuotation?: boolean;
   onQuotationStarted?: () => void;
+  onSynced?: () => void;
 }) {
   const {
     notify,
     isWorkOrders = false,
     startAtQuotation = false,
     onQuotationStarted = () => undefined,
+    onSynced = () => undefined,
   } = props;
   const [form, setForm] = useState<IntakeFormData>(getInitialForm);
   const [customer, setCustomer] = useState<CustomerFormData>(initialCustomer);
@@ -1104,14 +1106,17 @@ function NewIntake(props: {
     // Sync Customer to Customers tab / DB
     if (customer.name && customer.name.trim()) {
       try {
-        await customersApi.create({
+        const payload: Record<string, any> = {
           name: customer.name.trim(),
-          phone: customer.mobile || customer.phone || '',
-          email: customer.email || '',
+          phone: (customer.mobile || customer.phone || '').trim() || 'N/A',
           address: customer.address || '',
           type: customer.type || 'Individual',
           notes: customer.notes || '',
-        });
+        };
+        if (customer.email && customer.email.trim()) {
+          payload.email = customer.email.trim();
+        }
+        await customersApi.create(payload);
       } catch (err) {
         console.warn("Customer sync error:", err);
       }
@@ -1204,14 +1209,60 @@ function NewIntake(props: {
         window.localStorage.removeItem("garage-intake-draft");
       } catch (_) {}
       resetForm(false);
+      onSynced();
       notify("Quotation approved! Synced to Customers, Vehicles, Quotations, and Work Orders.");
-    } else {
+    } else if (status === "Pending") {
+      commitWorkOrderId(form.workOrder);
+      try {
+        await workOrdersApi.create({
+          workOrderId: form.workOrder,
+          customer: customer.name || 'Customer',
+          customerPhone: customer.mobile || customer.phone || '',
+          vehicle: vehicle.carName || `${vehicle.make} ${vehicle.model}`.trim() || 'Vehicle',
+          plate: vehicle.plateNumber || 'TBD',
+          year: vehicle.year || '2024',
+          service: selectedServices[0] || 'General Service',
+          detail: selectedComplaints.join(', ') || complaint || 'Service',
+          mechanic: form.mechanic || 'Ali Hassan',
+          status: 'Pending',
+          total: quotationTotal || 0,
+          subtotal: quotationSubtotal || 0,
+          discount: quotationDiscount || 0,
+          externalParts: externalParts.map((p) => ({
+            name: p.name,
+            supplier: p.supplier || '',
+            originalPrice: p.originalPrice || 0,
+            commission: p.commission || 0,
+          })),
+          labourCharges: labourCharges.map((l) => ({
+            service: l.service,
+            mechanic: l.mechanic || 'Ali Hassan',
+            amount: l.amount || 0,
+            hours: l.hours || 1,
+            rate: l.rate || 0,
+          })),
+          additionalCharges: additionalCharges.map((a) => ({
+            name: a.name,
+            amount: a.amount || 0,
+          })),
+        });
+      } catch (err) {
+        console.warn("Work order sync error on pending:", err);
+      }
+
+      try {
+        window.localStorage.removeItem("garage-intake-draft");
+      } catch (_) {}
       resetForm(false);
-      notify(
-        status === "Rejected"
-          ? "Quotation rejected and saved in Quotations."
-          : "Quotation saved as Pending in Quotations."
-      );
+      onSynced();
+      notify("Quotation saved as Pending! Synced to Customers, Vehicles, Quotations, and Work Orders.");
+    } else {
+      try {
+        window.localStorage.removeItem("garage-intake-draft");
+      } catch (_) {}
+      resetForm(false);
+      onSynced();
+      notify("Quotation rejected and saved in Quotations.");
     }
   };
 
