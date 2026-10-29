@@ -423,6 +423,25 @@ export const mechanicsApi = {
       method: 'DELETE',
     });
   },
+
+  async recordSalary(mechanicId: string, salaryData: any) {
+    const res = await request<{ success: boolean; data: any }>(`/mechanics/${mechanicId}/salary`, {
+      method: 'POST',
+      body: JSON.stringify(salaryData),
+    });
+    return res.data;
+  },
+
+  async getAllSalaries() {
+    try {
+      const res = await fetch(`${API_BASE_URL}/mechanics/salaries/all`);
+      if (!res.ok) return [];
+      const json = await res.json();
+      return json.data || [];
+    } catch {
+      return [];
+    }
+  },
 };
 
 // ─── POS TRANSACTIONS API ───────────────────────────────────────────────────

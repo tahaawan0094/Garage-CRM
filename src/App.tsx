@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { Activity, ArrowUp, Bell, Box, CalendarDays, CarFront, ChartColumn, Check, ChevronDown, CircleHelp, ClipboardList, Clock3, FileText, Headset, Home, Lock, Menu, MoreHorizontal, Plus, Settings, ShoppingCart, Unlock, Users, Wifi, Wrench, X, type LucideIcon } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Activity, ArrowUp, Bell, Box, CalendarDays, CarFront, ChartColumn, Check, ChevronDown, CircleHelp, ClipboardList, Clock3, FileText, Headset, Home, Lock, Menu, MoreHorizontal, Plus, RotateCcw, Settings, ShoppingCart, Unlock, Users, Wifi, Wrench, X, type LucideIcon } from 'lucide-react';
 import SplashScreen from './components/SplashScreen';
 import PosBilling from './components/PosBilling';
 import NewIntake from './components/NewIntake';
@@ -14,8 +14,9 @@ import Reports from './components/Reports';
 import AddPartModal from './components/AddPartModal';
 import { workOrdersApi, quotationsApi, customersApi, vehiclesApi, partsApi, mechanicsApi, invoicesApi } from './lib/api';
 import { getNextInvoiceId, commitInvoiceId } from './lib/sequence';
+import { DateRangeFilter, type DateFilterValue, matchesDateFilter } from './components/DateRangeFilter';
 
-const nav: [string, LucideIcon][] = [['Dashboard', Home], ['POS Billing', ShoppingCart], ['New Intake', ClipboardList], ['Work Orders', Wrench], ['Quotations', FileText], ['Invoices', FileText], ['Vehicles', CarFront], ['Customers', Users], ['Parts Inventory', Box], ['Mechanics', Users], ['Reports', ChartColumn], ['Settings', Settings]];
+const nav: [string, LucideIcon][] = [['Dashboard', Home], ['POS Billing', ShoppingCart], ['New Intake', Plus], ['Work Orders', Wrench], ['Quotations', FileText], ['Invoices', FileText], ['Vehicles', CarFront], ['Customers', Users], ['Parts Inventory', Box], ['Mechanics', Users], ['Reports', ChartColumn], ['Settings', Settings]];
 const money = (value: number) => `QAR ${value.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
 function PanelTitle({ icon: Icon, title, onView }: { icon: LucideIcon; title: string; onView?: () => void }) {
   return <div className="panel-title"><div><Icon size={25} /><h2>{title}</h2></div>{onView && <button className="text-link" onClick={onView}>View all</button>}</div>;
@@ -30,13 +31,16 @@ function App() {
   const [liveInvoices, setLiveInvoices] = useState<any[]>([]);
   const [lowStockParts, setLowStockParts] = useState<any[]>([]);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [posInitialTab, setPosInitialTab] = useState<'sale' | 'returns'>('sale');
+  const [posTargetInvoiceId, setPosTargetInvoiceId] = useState<string | undefined>(undefined);
+  const [dashboardDateFilter, setDashboardDateFilter] = useState<DateFilterValue>({ type: 'today' });
 
   const [sidebarLocked, setSidebarLocked] = useState<boolean>(() => {
     try {
-      const saved = localStorage.getItem('garage_sidebar_locked');
-      return saved !== null ? JSON.parse(saved) : false;
+      const saved = localStorage.getItem('garage_sidebar_locked_v3');
+      return saved !== null ? JSON.parse(saved) : true;
     } catch (_) {
-      return false;
+      return true;
     }
   });
   const [sidebarHovered, setSidebarHovered] = useState(false);
@@ -46,7 +50,7 @@ function App() {
     setSidebarLocked(prev => {
       const next = !prev;
       try {
-        localStorage.setItem('garage_sidebar_locked', JSON.stringify(next));
+        localStorage.setItem('garage_sidebar_locked_v3', JSON.stringify(next));
       } catch (_) {}
       return next;
     });
@@ -87,7 +91,6 @@ function App() {
     return () => window.removeEventListener('keydown', handleKey);
   }, []);
   useEffect(() => { if (!notice) return; const timer = window.setTimeout(() => setNotice(''), 3500); return () => window.clearTimeout(timer); }, [notice]);
-  const visibleOrders = liveOrders.filter(order => (tab === 'Active' || tab === 'All' || (tab === 'Awaiting Parts' && order.status === 'Awaiting Parts')) && Object.values(order).join(' ').toLowerCase().includes(query.toLowerCase()));
   const open = (title: string) => { setModal(title); setSidebar(false); };
   const navigate = (label: string) => {
     if (label === 'Dashboard' || label === 'POS Billing' || label === 'New Intake' || label === 'Work Orders' || label === 'Quotations' || label === 'Invoices' || label === 'Vehicles' || label === 'Customers' || label === 'Parts Inventory' || label === 'Mechanics' || label === 'Reports') {
@@ -198,18 +201,91 @@ function App() {
     }
   };
 
-  const activeJobsCount = liveOrders.filter(o => o.status === 'In Progress' || o.status === 'Active').length;
-  const vehiclesReadyCount = liveOrders.filter(o => o.status === 'Ready for Delivery' || o.status === 'Ready').length;
-  const todayRevenue = liveInvoices.reduce((sum, inv) => sum + (Number(inv.amount) || 0), 0);
-  const pendingQuotesTotal = quotes.reduce((sum, quote) => sum + (Number(quote.amount) || 0), 0);
+  const filteredDashboardOrders = useMemo(() => {
+    return liveOrders.filter(o => matchesDateFilter(o.date || o.createdAt, dashboardDateFilter));
+  }, [liveOrders, dashboardDateFilter]);
+
+  const filteredDashboardInvoices = useMemo(() => {
+    return liveInvoices.filter(i => matchesDateFilter(i.date || i.created_at, dashboardDateFilter));
+  }, [liveInvoices, dashboardDateFilter]);
+
+  const filteredDashboardQuotes = useMemo(() => {
+    return quotes.filter(q => matchesDateFilter(q.date || (q as any).createdAt, dashboardDateFilter));
+  }, [quotes, dashboardDateFilter]);
+
+  const activeJobsCount = filteredDashboardOrders.filter(o => o.status === 'In Progress' || o.status === 'Active').length;
+  const vehiclesReadyCount = filteredDashboardOrders.filter(o => o.status === 'Ready for Delivery' || o.status === 'Ready').length;
+  const pendingQuotesTotal = filteredDashboardQuotes.reduce((sum, quote) => sum + (Number(quote.amount) || 0), 0);
+
+  // POS Parts sales & returns calculation (responsive to dashboardDateFilter)
+  const posSalesCalculation = useMemo(() => {
+    let posInvoicesList: any[] = [];
+    let posReturnsList: any[] = [];
+    try {
+      posInvoicesList = JSON.parse(localStorage.getItem('garage-pos-invoices') || '[]');
+    } catch {}
+    try {
+      posReturnsList = JSON.parse(localStorage.getItem('garage-pos-returns') || '[]');
+    } catch {}
+
+    const backendPartsInvoices = liveInvoices.filter(
+      (inv: any) => inv.type === 'Parts' || inv.service?.toLowerCase().includes('part') || inv.workOrder === 'POS'
+    );
+    const existingIds = new Set(backendPartsInvoices.map((inv: any) => inv.id || inv.invoiceId));
+    const mergedPartsInvoices = [
+      ...backendPartsInvoices,
+      ...posInvoicesList.filter((inv: any) => !existingIds.has(inv.id)),
+    ];
+
+    const filteredPartsInvoices = mergedPartsInvoices.filter((inv: any) =>
+      matchesDateFilter(inv.date || inv.created_at, dashboardDateFilter)
+    );
+    const filteredReturnsList = posReturnsList.filter((ret: any) =>
+      matchesDateFilter(ret.date || ret.createdAt, dashboardDateFilter)
+    );
+
+    const totalPartsSales = filteredPartsInvoices.reduce((sum: number, inv: any) => sum + (Number(inv.total || inv.amount) || 0), 0);
+    const totalReturnsRefunded = filteredReturnsList.reduce((sum: number, ret: any) => sum + (Number(ret.refundAmount) || 0), 0);
+    const netPartsRevenue = Math.max(0, totalPartsSales - totalReturnsRefunded);
+
+    const partsSoldToday = filteredPartsInvoices.reduce((sum: number, inv: any) => {
+      const items = inv.items || [];
+      return sum + items.reduce((iSum: number, item: any) => iSum + (Number(item.quantity) || 1), 0);
+    }, 0);
+
+    return {
+      totalPartsSales,
+      totalReturnsRefunded,
+      netPartsRevenue,
+      partsSoldToday,
+      partsInvoicesCount: filteredPartsInvoices.length,
+      returnsCount: filteredReturnsList.length,
+    };
+  }, [liveInvoices, refreshTrigger, dashboardDateFilter]);
+
+  const serviceRevenue = filteredDashboardInvoices
+    .filter((inv: any) => inv.type !== 'Parts' && !inv.service?.toLowerCase().includes('part') && inv.workOrder !== 'POS')
+    .reduce((sum, inv) => sum + (Number(inv.amount) || 0), 0);
+  const totalWorkshopRevenue = serviceRevenue + posSalesCalculation.netPartsRevenue;
 
   const tabCounts = {
     Active: activeJobsCount,
-    'Awaiting Parts': liveOrders.filter(o => o.status === 'Awaiting Parts').length,
-    Completed: liveOrders.filter(o => o.status === 'Completed').length,
-    Released: liveOrders.filter(o => o.status === 'Released' || o.status === 'Ready for Delivery').length,
-    All: liveOrders.length,
+    'Awaiting Parts': filteredDashboardOrders.filter(o => o.status === 'Awaiting Parts').length,
+    Completed: filteredDashboardOrders.filter(o => o.status === 'Completed').length,
+    Released: filteredDashboardOrders.filter(o => o.status === 'Released' || o.status === 'Ready for Delivery').length,
+    All: filteredDashboardOrders.length,
   };
+
+  const visibleOrders = filteredDashboardOrders.filter(order => {
+    const matchesTab =
+      tab === 'All' ||
+      (tab === 'Active' && (order.status === 'In Progress' || order.status === 'Active')) ||
+      (tab === 'Awaiting Parts' && order.status === 'Awaiting Parts') ||
+      (tab === 'Completed' && order.status === 'Completed') ||
+      (tab === 'Released' && (order.status === 'Released' || order.status === 'Ready for Delivery'));
+    const matchesQuery = !query || Object.values(order).join(' ').toLowerCase().includes(query.toLowerCase());
+    return matchesTab && matchesQuery;
+  });
 
   const getInitials = (name?: string) => name ? name.split(' ').map((p: string) => p[0]).join('').slice(0, 2).toUpperCase() : 'AH';
 
@@ -242,8 +318,8 @@ function App() {
             alt="Garage CRM"
           />
           <div className="brand-title-wrap">
-            <span className="brand-title">GARAGE <span className="brand-accent">CRM</span></span>
-            <span className="brand-subtitle">Workshop System</span>
+            <span className="brand-title">AUTO CARE &amp; SERVICE</span>
+            <span className="brand-subtitle">Workshop CRM System</span>
           </div>
         </a>
         <button
@@ -257,20 +333,22 @@ function App() {
         </button>
       </div>
       <nav aria-label="Main navigation">
-        {nav.map(([label, Icon]) => {
-          const isSelected = label === page;
-          return (
-            <button
-              key={label}
-              className={`nav-item ${isSelected ? 'selected' : ''}`}
-              onClick={() => navigate(label)}
-              title={label}
-            >
-              <Icon size={18} strokeWidth={isSelected ? 2 : 1.75} />
-              <span>{label}</span>
-            </button>
-          );
-        })}
+        <div className="nav-group-main">
+          {nav.map(([label, Icon]) => {
+            const isSelected = label === page;
+            return (
+              <button
+                key={label}
+                className={`nav-item ${isSelected ? 'selected' : ''}`}
+                onClick={() => navigate(label)}
+                title={label}
+              >
+                <Icon size={23} strokeWidth={isSelected ? 2.4 : 2.0} />
+                <span>{label}</span>
+              </button>
+            );
+          })}
+        </div>
       </nav>
     </aside>
     {sidebar && <button aria-label="Close navigation" className="sidebar-scrim" onClick={() => setSidebar(false)} />}
@@ -285,10 +363,6 @@ function App() {
             <div className="workshop-identity-info">
               <span className="workshop-name">Doha Central Workshop &amp; Service Hub</span>
               <span className="workshop-branch">Main Garage Facility • Bays 01–12</span>
-            </div>
-            <div className="workshop-live-badge">
-              <span className="live-dot" />
-              <span>Operational</span>
             </div>
           </div>
         </div>
@@ -334,7 +408,15 @@ function App() {
           </button>
         </div>
       </header>
-      <div hidden={page !== 'POS Billing'}><PosBilling globalSearch={query} notify={setNotice} refreshTrigger={refreshTrigger} /></div>
+      <div hidden={page !== 'POS Billing'}>
+        <PosBilling
+          globalSearch={query}
+          notify={setNotice}
+          refreshTrigger={refreshTrigger}
+          initialTab={posInitialTab}
+          initialReturnInvoiceId={posTargetInvoiceId}
+        />
+      </div>
       <div hidden={page !== 'New Intake'}>
         <NewIntake
           notify={setNotice}
@@ -368,7 +450,14 @@ function App() {
         <Invoices
           notify={setNotice}
           refreshTrigger={refreshTrigger}
-          onCreate={() => {
+          onCreate={(initialTab?: string, invoiceId?: string) => {
+            if (initialTab === 'returns') {
+              setPosInitialTab('returns');
+              setPosTargetInvoiceId(invoiceId);
+            } else {
+              setPosInitialTab('sale');
+              setPosTargetInvoiceId(undefined);
+            }
             setPage('POS Billing');
             setSidebar(false);
             setQuery('');
@@ -411,8 +500,25 @@ function App() {
         <Reports notify={setNotice} />
       </div>
       <main hidden={page !== 'Dashboard'} className="dashboard">
+        <div className="dashboard-header-bar">
+          <div className="dashboard-header-title">
+            <h2>Workshop Overview</h2>
+            <p>Real-time garage activity, revenue performance &amp; work orders</p>
+          </div>
+          <div className="dashboard-header-filters">
+            <DateRangeFilter
+              value={dashboardDateFilter}
+              onChange={setDashboardDateFilter}
+              labelPrefix="Overview"
+            />
+          </div>
+        </div>
         <section className="stats" aria-label="Workshop overview">{([
-          [Wrench, String(activeJobsCount), 'Active Jobs', `${activeJobsCount > 0 ? `+${activeJobsCount}` : '0'} active jobs in garage`, 'orange'], [FileText, '0', 'Awaiting Signature', 'No change', 'blue'], [CarFront, String(vehiclesReadyCount), 'Vehicles Ready', `${vehiclesReadyCount} ready for pickup`, 'green'], [ChartColumn, money(todayRevenue), 'Today Revenue', activeJobsCount > 0 ? '+32% from yesterday' : 'No revenue yet', 'orange'], [FileText, String(quotes.length), 'Pending Quotes', `${money(pendingQuotesTotal)} total`, 'orange'],
+          [Wrench, String(activeJobsCount), 'Active Jobs', `${activeJobsCount > 0 ? `+${activeJobsCount}` : '0'} active jobs in garage`, 'orange'],
+          [Box, money(posSalesCalculation.netPartsRevenue), 'Parts Sales (POS)', `${posSalesCalculation.partsSoldToday} parts sold · ${money(posSalesCalculation.totalReturnsRefunded)} returns`, 'blue'],
+          [CarFront, String(vehiclesReadyCount), 'Vehicles Ready', `${vehiclesReadyCount} ready for pickup`, 'green'],
+          [ChartColumn, money(totalWorkshopRevenue), 'Total Revenue', `${money(serviceRevenue)} service + ${money(posSalesCalculation.netPartsRevenue)} parts`, 'orange'],
+          [FileText, String(quotes.length), 'Pending Quotes', `${money(pendingQuotesTotal)} total`, 'orange'],
         ] as [LucideIcon, string, string, string, string][]).map(([Icon, value, label, change, color]) => <article className="stat-card" key={label}><span className={`stat-icon ${color}`}><Icon size={27} strokeWidth={2.3} /></span><div><strong className={`stat-value ${value.length > 8 ? 'currency' : ''}`}>{value}</strong><p>{label}</p><small className={change.startsWith('+') ? 'positive' : 'muted'}>{change}</small></div></article>)}</section>
         <div className="primary-grid">
           <section className="panel orders-panel"><PanelTitle icon={Wrench} title="Active Work Orders" onView={() => { setTab('All'); setQuery(''); }} /><div className="tabs" role="tablist" aria-label="Work order status">{[['Active', tabCounts.Active], ['Awaiting Parts', tabCounts['Awaiting Parts']], ['Completed', tabCounts.Completed], ['Released', tabCounts.Released], ['All', tabCounts.All]].map(([label, count]) => <button role="tab" aria-selected={tab === label} key={label} className={tab === label ? 'active' : ''} onClick={() => setTab(String(label))}>{label} ({count})</button>)}</div>
@@ -424,8 +530,45 @@ function App() {
           <section className="panel quotes-panel"><PanelTitle icon={FileText} title="Quotations Awaiting Approval" onView={() => open('All quotations')} /><div className="quote-list">{quotes.map((quote, index) => <article className="quote" key={quote.id}><CarFront size={53} strokeWidth={1.3} className={`quote-car car-${index}`} /><div className="quote-info"><strong>{quote.id}</strong><p>{quote.vehicle} · {quote.year || '2024'}</p><p>{quote.service}</p></div><div className="quote-actions"><strong>{money(quote.amount || 0)}</strong><small>{quote.time || 'Awaiting approval'}</small><div><button className="approve" onClick={() => decideQuote(quote.id, 'Approved')}>Approve</button><button className="reject" onClick={() => decideQuote(quote.id, 'Rejected')}>Reject</button></div></div></article>)}{quotes.length === 0 && <div className="empty-state"><Check /><p>No quotations awaiting approval.</p></div>}</div></section>
         </div>
         <div className="secondary-grid">
-          <section className="panel billing-panel"><PanelTitle icon={ShoppingCart} title="POS Billing & Invoices" onView={() => navigate('Invoices')} /><div className="billing-stats"><div><span><FileText className="blue-text" size={26} /><strong>{liveInvoices.length}</strong></span><small>Invoices Recorded</small><b>{money(todayRevenue)}</b></div><div><span><CarFront className="green-text" size={24} /><b>{money(todayRevenue)}</b></span><small>Today Revenue</small><em><ArrowUp size={13} /> Live</em></div><div><span><FileText className="purple-text" size={24} /><b>{money(todayRevenue * 3.5)}</b></span><small>This Month (Est)</small><em><ArrowUp size={13} /> Live</em></div></div></section>
-          <section className="panel quick-panel"><PanelTitle icon={Plus} title="Quick Actions" /><div className="quick-grid">{([[CarFront, 'New Intake', 'Add customer & vehicle', 'orange'], [Users, 'Add Customer', 'Create new customer', 'blue'], [FileText, 'Create Quotation', 'Send estimate to customer', 'blue'], [FileText, 'Create Invoice', 'Bill for completed work', 'purple']] as [LucideIcon, string, string, string][]).map(([Icon, label, detail, color]) => <button key={label} onClick={() => label === 'New Intake' ? navigate(label) : label === 'Create Invoice' ? navigate('Invoices') : open(label)} className={`quick-action ${color}`}><Icon size={28} fill="currentColor" fillOpacity={0.1} /><strong>{label}</strong><small>{detail}</small></button>)}</div></section>
+          <section className="panel billing-panel">
+            <PanelTitle icon={ShoppingCart} title="POS Billing & Invoices" onView={() => navigate('Invoices')} />
+            <div className="billing-stats">
+              <div>
+                <span><FileText className="blue-text" size={24} /><strong>{liveInvoices.length + posSalesCalculation.partsInvoicesCount}</strong></span>
+                <small>Invoices Recorded</small>
+                <b>{money(totalWorkshopRevenue)}</b>
+              </div>
+              <div>
+                <span><Box className="orange-text" size={24} /><b>{money(posSalesCalculation.netPartsRevenue)}</b></span>
+                <small>Parts Net Sales</small>
+                <em><ArrowUp size={13} /> {posSalesCalculation.partsSoldToday} sold</em>
+              </div>
+              <div>
+                <span><CarFront className="green-text" size={24} /><b>{money(serviceRevenue)}</b></span>
+                <small>Service Invoices</small>
+                <em><ArrowUp size={13} /> Live</em>
+              </div>
+              <div>
+                <span><RotateCcw className="red-text" size={22} /><b style={{ color: '#dc2626' }}>-{money(posSalesCalculation.totalReturnsRefunded)}</b></span>
+                <small>Returns &amp; Refunds</small>
+                <em style={{ background: '#fef2f2', color: '#dc2626' }}>{posSalesCalculation.totalReturnsRefunded > 0 ? 'Restocked' : 'No returns'}</em>
+              </div>
+            </div>
+            <div className="billing-panel-actions">
+              <button className="primary-button" onClick={() => navigate('POS Billing')}>
+                <ShoppingCart size={15} />
+                <span>Open POS Counter</span>
+              </button>
+              <button className="subtle-button" onClick={() => navigate('Invoices')}>
+                <FileText size={15} />
+                <span>View All Invoices</span>
+              </button>
+              <button className="subtle-button" onClick={() => navigate('New Intake')}>
+                <Plus size={15} />
+                <span>New Intake Job</span>
+              </button>
+            </div>
+          </section>
           <section className="panel stock-panel"><PanelTitle icon={Box} title="Low Stock Parts" onView={() => navigate('Parts Inventory')} />{lowStockParts.length > 0 ? lowStockParts.map((item: any) => {
             const name = item.name;
             const count = item.quantity ?? 0;

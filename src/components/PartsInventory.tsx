@@ -1,16 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { partsApi } from "../lib/api";
+import { CustomDropdown } from "./CustomDropdown";
 import {
   Activity,
   AlertTriangle,
   Box,
   CalendarDays,
-  Clock3,
   ChevronLeft,
   ChevronRight,
   Coins,
   Eye,
-  FileText,
   Info,
   MoreVertical,
   Package,
@@ -22,6 +21,7 @@ import {
 } from "lucide-react";
 import AddPartModal from "./AddPartModal";
 import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
+import { PartDetailsModal } from "./PartDetailsModal";
 
 type PartStatus = "In Stock" | "Low Stock" | "Out of Stock";
 type PartActivity = { date: string; type: string; quantity: number; reference: string; notes: string };
@@ -52,17 +52,40 @@ const statusClass: Record<PartStatus, string> = { "In Stock": "in-stock", "Low S
 const money = (value: number) => `QAR ${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const stockIconClass = (category: string) => category.toLowerCase().replaceAll(" ", "-");
 
+const LOCAL_STORAGE_PARTS_KEY = "garage_crm_parts_inventory_v1";
+
 function PartsInventory({ notify, onAdd, refreshTrigger }: { notify: (message: string) => void; onAdd: () => void; refreshTrigger?: number }) {
-  const [parts, setParts] = useState(initialParts);
-  const [selectedId, setSelectedId] = useState("");
+  const [parts, setParts] = useState<Part[]>(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_PARTS_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return initialParts;
+  });
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All Categories");
   const [stockFilter, setStockFilter] = useState("All Stock Status");
   const [brandFilter, setBrandFilter] = useState("All Brands");
   const [page, setPage] = useState(1);
 
+  // Sync parts to localStorage & notify other components
+  useEffect(() => {
+    if (parts.length > 0) {
+      try {
+        localStorage.setItem(LOCAL_STORAGE_PARTS_KEY, JSON.stringify(parts));
+        window.dispatchEvent(new CustomEvent("garage_parts_updated"));
+      } catch (e) {
+        console.warn("Could not persist parts to localStorage:", e);
+      }
+    }
+  }, [parts]);
+
   // Row 3-dots action menu & modals
   const [activeMenuPartId, setActiveMenuPartId] = useState<string | null>(null);
+  const [viewingPart, setViewingPart] = useState<Part | null>(null);
   const [editingPart, setEditingPart] = useState<Part | null>(null);
   const [deletingPart, setDeletingPart] = useState<Part | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -96,9 +119,6 @@ function PartsInventory({ notify, onAdd, refreshTrigger }: { notify: (message: s
   const pageCount = Math.max(1, Math.ceil(filteredParts.length / 10));
   const currentPage = Math.min(page, pageCount);
   const pageParts = filteredParts.slice((currentPage - 1) * 10, currentPage * 10);
-  const selectedPart = filteredParts.find((part) => part.id === selectedId) ?? filteredParts[0] ?? parts.find((part) => part.id === selectedId);
-
-  const viewHistory = () => selectedPart && notify(`Showing the latest ${selectedPart.activity.length} inventory movements for ${selectedPart.name}.`);
 
   // Handle Edit Part Save
   const handleSaveEditPart = async (partData: any) => {
@@ -124,8 +144,8 @@ function PartsInventory({ notify, onAdd, refreshTrigger }: { notify: (message: s
       const targetId = deletingPart.id || deletingPart.partId || "";
       await partsApi.delete(targetId);
       setParts((prev) => prev.filter((p) => p.id !== deletingPart.id));
-      if (selectedId === deletingPart.id) {
-        setSelectedId("");
+      if (viewingPart?.id === deletingPart.id) {
+        setViewingPart(null);
       }
       notify(`${deletingPart.name} removed from inventory.`);
       setDeletingPart(null);
@@ -154,9 +174,29 @@ function PartsInventory({ notify, onAdd, refreshTrigger }: { notify: (message: s
         <section className="parts-list-card">
           <div className="parts-filters">
             <label className="parts-search"><Search size={16} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search by part name, part ID, category, brand, compatibility..." aria-label="Search parts inventory" /></label>
-            <select value={categoryFilter} onChange={(event) => { setCategoryFilter(event.target.value); setPage(1); }} aria-label="Filter by part category">{["All Categories", "Engine Oil", "Brakes", "Filters", "Ignition", "Electrical", "Suspension", "Cooling", "Engine", "Transmission", "Body", "Fluids", "Other"].map((category) => <option key={category}>{category}</option>)}</select>
-            <select value={stockFilter} onChange={(event) => { setStockFilter(event.target.value); setPage(1); }} aria-label="Filter by stock status">{["All Stock Status", "In Stock", "Low Stock", "Out of Stock"].map((status) => <option key={status}>{status}</option>)}</select>
-            <select value={brandFilter} onChange={(event) => { setBrandFilter(event.target.value); setPage(1); }} aria-label="Filter by brand">{["All Brands", "Toyota Genuine", "Mobil 1", "Castrol", "Bosch", "Brembo", "Mann-Filter", "NGK", "Denso", "Gates", "Varta", "KYB", "SKF", "555 Japan", "Liqui Moly", "Motul", "OEM Genuine", "Aftermarket"].map((brand) => <option key={brand}>{brand}</option>)}</select>
+            <CustomDropdown
+              value={categoryFilter}
+              onChange={(val) => { setCategoryFilter(val); setPage(1); }}
+              ariaLabel="Filter by part category"
+              options={["All Categories", "Engine Oil", "Brakes", "Filters", "Ignition", "Electrical", "Suspension", "Cooling", "Engine", "Transmission", "Body", "Fluids", "Other"]}
+            />
+            <CustomDropdown
+              value={stockFilter}
+              onChange={(val) => { setStockFilter(val); setPage(1); }}
+              ariaLabel="Filter by stock status"
+              options={[
+                { value: "All Stock Status", label: "All Stock Status" },
+                { value: "In Stock", label: "In Stock", badge: "Available", badgeColor: "green" },
+                { value: "Low Stock", label: "Low Stock", badge: "Low", badgeColor: "orange" },
+                { value: "Out of Stock", label: "Out of Stock", badge: "Empty", badgeColor: "red" },
+              ]}
+            />
+            <CustomDropdown
+              value={brandFilter}
+              onChange={(val) => { setBrandFilter(val); setPage(1); }}
+              ariaLabel="Filter by brand"
+              options={["All Brands", "Toyota Genuine", "Mobil 1", "Castrol", "Bosch", "Brembo", "Mann-Filter", "NGK", "Denso", "Gates", "Varta", "KYB", "SKF", "555 Japan", "Liqui Moly", "Motul", "OEM Genuine", "Aftermarket"]}
+            />
             <label className="parts-date-filter"><CalendarDays size={15} /><span>Last Updated (All Dates)</span></label>
           </div>
           <div className="parts-table-scroll">
@@ -164,9 +204,9 @@ function PartsInventory({ notify, onAdd, refreshTrigger }: { notify: (message: s
               <thead><tr><th>#</th><th>Part ID</th><th>Part Name</th><th>Category</th><th>Brand</th><th>Stock Qty</th><th>Unit Cost</th><th>Selling Price</th><th>Commission</th><th>Last Updated</th><th>Status</th><th>Actions</th></tr></thead>
               <tbody>
                 {pageParts.map((part, index) => (
-                  <tr key={part.id || part.partId} className={selectedPart?.id === part.id ? "selected" : ""} onClick={() => setSelectedId(part.id || part.partId || '')}>
+                  <tr key={part.id || part.partId} className={viewingPart?.id === part.id ? "selected" : ""} onClick={() => setViewingPart(part)} style={{ cursor: "pointer" }}>
                     <td>{(currentPage - 1) * 10 + index + 1}</td>
-                    <td><button className="parts-id-link" onClick={(event) => { event.stopPropagation(); setSelectedId(part.id || part.partId || ''); }}>{part.partId || part.id}</button></td>
+                    <td><button className="parts-id-link" onClick={(event) => { event.stopPropagation(); setViewingPart(part); }}>{part.partId || part.id}</button></td>
                     <td><span className={`parts-product-cell ${stockIconClass(part.category)}`}><Package size={27} /><span>{part.name}</span></span></td>
                     <td>{part.category}</td><td>{part.brand}</td><td className={part.quantity <= part.lowStockAt ? "parts-low-quantity" : ""}>{part.quantity}</td>
                     <td>{money(part.unitCost)}</td><td>{money(part.sellingPrice)}</td><td className="parts-commission">{money(part.commission)}</td><td>{part.lastUpdated}</td>
@@ -180,7 +220,7 @@ function PartsInventory({ notify, onAdd, refreshTrigger }: { notify: (message: s
                           title="View Details"
                           onClick={(event) => {
                             event.stopPropagation();
-                            setSelectedId(part.id || part.partId || '');
+                            setViewingPart(part);
                           }}
                         >
                           <Eye size={15} />
@@ -206,7 +246,7 @@ function PartsInventory({ notify, onAdd, refreshTrigger }: { notify: (message: s
                                 right: 0,
                                 top: "calc(100% + 4px)",
                                 zIndex: 999,
-                                minWidth: "135px",
+                                minWidth: "140px",
                                 background: "#ffffff",
                                 border: "1px solid #e2e8f0",
                                 borderRadius: "8px",
@@ -217,6 +257,34 @@ function PartsInventory({ notify, onAdd, refreshTrigger }: { notify: (message: s
                                 gap: "2px",
                               }}
                             >
+                              <button
+                                type="button"
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "8px",
+                                  width: "100%",
+                                  padding: "7px 10px",
+                                  border: 0,
+                                  background: "transparent",
+                                  borderRadius: "6px",
+                                  fontSize: "12px",
+                                  fontWeight: 600,
+                                  color: "#ea580c",
+                                  cursor: "pointer",
+                                  textAlign: "left",
+                                  transition: "background 0.15s ease",
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.background = "#fff7ed")}
+                                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                                onClick={() => {
+                                  setActiveMenuPartId(null);
+                                  setViewingPart(part);
+                                }}
+                              >
+                                <Eye size={13} style={{ color: "#ea580c" }} />
+                                <span>View Details</span>
+                              </button>
                               <button
                                 type="button"
                                 style={{
@@ -286,65 +354,22 @@ function PartsInventory({ notify, onAdd, refreshTrigger }: { notify: (message: s
           </div>
           <footer className="parts-table-footer"><span>Showing {filteredParts.length ? (currentPage - 1) * 10 + 1 : 0} to {Math.min(currentPage * 10, filteredParts.length)} of {filteredParts.length} parts</span><div><button aria-label="Previous page" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}><ChevronLeft size={16} /></button>{Array.from({ length: pageCount }, (_, index) => index + 1).map((pageNumber) => pageNumber <= 5 || pageNumber === pageCount || Math.abs(pageNumber - currentPage) <= 1 ? <button key={pageNumber} className={currentPage === pageNumber ? "active" : ""} aria-label={`Page ${pageNumber}`} aria-current={currentPage === pageNumber ? "page" : undefined} onClick={() => setPage(pageNumber)}>{pageNumber}</button> : pageNumber === 6 || pageNumber === pageCount - 1 ? <span key={pageNumber}>…</span> : null)}<button aria-label="Next page" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}><ChevronRight size={16} /></button></div></footer>
         </section>
-        {selectedPart && (
-          <aside className="parts-detail-card" aria-label={`Part details for ${selectedPart.id || selectedPart.partId}`}>
-            <header>
-              <div><FileText size={16} /><strong>Part Details</strong></div>
-              <button
-                type="button"
-                onClick={() => setEditingPart(selectedPart)}
-                style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
-              >
-                <Pencil size={11} />
-                <span>Edit</span>
-              </button>
-            </header>
-            <div className="parts-detail-heading"><strong>{selectedPart.name}</strong><span className={`parts-status-badge ${statusClass[partStatus(selectedPart)]}`}>{partStatus(selectedPart)}</span></div>
-            <div className="parts-detail-overview">
-              <span className={`parts-large-product ${stockIconClass(selectedPart.category)}`}><Package size={72} strokeWidth={1.5} /></span>
-              <div>
-                <span>Part ID:<strong>{selectedPart.partId || selectedPart.id}</strong></span>
-                {selectedPart.partNumber && <span>OEM / Part #:<strong>{selectedPart.partNumber}</strong></span>}
-                <span>Category:<strong>{selectedPart.category}</strong></span>
-                <span>Brand:<strong>{selectedPart.brand}</strong></span>
-                {selectedPart.compatibility && <span>Compatibility:<strong>{selectedPart.compatibility}</strong></span>}
-                <span>Stock Qty:<strong>{selectedPart.quantity}</strong></span>
-                <span>Low Stock Alert:<strong>{selectedPart.lowStockAt}</strong></span>
-                <span>Unit Cost:<strong>{money(selectedPart.unitCost)}</strong></span>
-                <span>Selling Price:<strong>{money(selectedPart.sellingPrice)}</strong></span>
-                <span>Commission Eligible:<strong>{selectedPart.commission > 0 ? "Yes" : "No"}</strong></span>
-                <span>Commission Amount:<strong>{money(selectedPart.commission)}</strong></span>
-                <span>Supplier:<strong>{selectedPart.supplier}</strong></span>
-                <span>Last Restocked:<strong>{selectedPart.lastRestocked}</strong></span>
-              </div>
-            </div>
-            <div className="parts-policy-detail"><Info size={17} /><span><strong>Regular parts sales are excluded from revenue.</strong><br />Only commission earned on eligible parts is included.</span></div>
-            <section className="parts-activity">
-              <h3><Clock3 size={15} />Recent Activity<button onClick={viewHistory}>View All</button></h3>
-              <div className="parts-activity-scroll"><table><thead><tr><th>Date</th><th>Type</th><th>Qty</th><th>Reference</th><th>Notes</th></tr></thead><tbody>{selectedPart.activity.map((record, index) => <tr key={`${selectedPart.id}-${record.date}-${index}`}><td>{record.date}</td><td>{record.type}</td><td>{record.quantity}</td><td>{record.reference}</td><td>{record.notes}</td></tr>)}</tbody></table></div>
-            </section>
-            <div className="parts-detail-actions" style={{ gridTemplateColumns: "1fr 1fr 1fr", marginTop: "10px" }}>
-              <button type="button" onClick={viewHistory} title="View movement log"><Clock3 size={13} />History</button>
-              <button
-                type="button"
-                onClick={() => setEditingPart(selectedPart)}
-                title="Edit this part"
-                style={{ color: "#0284c7" }}
-              >
-                <Pencil size={13} />Edit Part
-              </button>
-              <button
-                type="button"
-                onClick={() => setDeletingPart(selectedPart)}
-                title="Delete this part"
-                style={{ borderColor: "#fecaca", background: "#fff1f2", color: "#e11d48", fontWeight: 600 }}
-              >
-                <Trash2 size={13} />Delete
-              </button>
-            </div>
-          </aside>
-        )}
       </div>
+
+      {/* Part Details Modal */}
+      <PartDetailsModal
+        isOpen={Boolean(viewingPart)}
+        part={viewingPart}
+        onClose={() => setViewingPart(null)}
+        onEdit={(partToEdit: any) => {
+          setViewingPart(null);
+          setEditingPart(partToEdit);
+        }}
+        onDelete={(partToDelete: any) => {
+          setViewingPart(null);
+          setDeletingPart(partToDelete);
+        }}
+      />
 
       {/* Edit Part Modal */}
       {editingPart && (

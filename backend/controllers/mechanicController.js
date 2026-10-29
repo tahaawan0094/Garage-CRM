@@ -111,7 +111,70 @@ const deleteMechanic = async (req, res, next) => {
   }
 };
 
+// POST /api/mechanics/:id/salary - Record salary payment
+const recordSalaryPayment = async (req, res, next) => {
+  try {
+    const slipNo = req.body.slipNo || (await generateId('salary', 'SLIP', 4));
+    const salaryRecord = {
+      ...req.body,
+      slipNo,
+      netSalary:
+        Number(req.body.baseSalary || 0) +
+        Number(req.body.bonus || 0) -
+        Number(req.body.deductions || 0),
+    };
+
+    const mechanic = await Mechanic.findOneAndUpdate(
+      idQuery(req.params.id, 'mechanicId'),
+      { $push: { salaryHistory: salaryRecord } },
+      { new: true }
+    );
+
+    if (!mechanic) return sendError(res, 'Mechanic not found', 404);
+    return sendSuccess(res, { mechanic, salaryRecord }, 'Salary payment recorded successfully', 201);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// GET /api/mechanics/salaries/all - Get all salary disbursements across all mechanics
+const getAllSalaries = async (req, res, next) => {
+  try {
+    const mechanics = await Mechanic.find({ 'salaryHistory.0': { $exists: true } });
+    const allDisbursements = [];
+
+    for (const m of mechanics) {
+      for (const slip of m.salaryHistory || []) {
+        allDisbursements.push({
+          id: slip._id || slip.slipNo,
+          slipNo: slip.slipNo,
+          mechanicId: m.mechanicId || m._id,
+          mechanicName: m.name,
+          role: m.role,
+          month: slip.month,
+          baseSalary: slip.baseSalary,
+          bonus: slip.bonus,
+          deductions: slip.deductions,
+          netSalary: slip.netSalary,
+          paymentDate: slip.paymentDate,
+          paymentMethod: slip.paymentMethod,
+          status: slip.status,
+          reference: slip.reference,
+          notes: slip.notes,
+          createdAt: slip.createdAt,
+        });
+      }
+    }
+
+    // Sort descending by date
+    allDisbursements.sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime());
+    return sendSuccess(res, allDisbursements);
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   getMechanics, getMechanicById, createMechanic, updateMechanic,
-  updateMechanicStatus, deleteMechanic,
+  updateMechanicStatus, deleteMechanic, recordSalaryPayment, getAllSalaries,
 };

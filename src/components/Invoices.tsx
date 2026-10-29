@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { invoicesApi } from "../lib/api";
 import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
 import ViewInfoModal, { type ViewInfoTarget } from "./ViewInfoModal";
+import { CustomDropdown } from "./CustomDropdown";
+import { DateRangeFilter, type DateFilterValue, matchesDateFilter } from "./DateRangeFilter";
 import {
   AlertCircle,
   Activity,
-  CalendarDays,
   CarFront,
   Check,
   ChevronLeft,
@@ -15,15 +16,17 @@ import {
   CreditCard,
   Eye,
   FileText,
+  Package,
   Printer,
   Search,
+  RotateCcw,
   Share2,
   Trash2,
   UserRound,
   Wrench,
 } from "lucide-react";
 
-type InvoiceStatus = "Pending" | "Paid" | "Overdue" | "Partial";
+type InvoiceStatus = "Pending" | "Paid" | "Overdue" | "Partial" | "Returned" | "Partially Returned";
 type InvoiceItem = { name: string; quantity: number; unitPrice: number };
 type Invoice = {
   id: string;
@@ -43,21 +46,26 @@ type Invoice = {
   discount: number;
   advisor: string;
   items: InvoiceItem[];
+  type?: string;
 };
 
 const initialInvoices: Invoice[] = [];
 
-const statusClass: Record<InvoiceStatus, string> = {
+const statusClass: Record<string, string> = {
   Pending: "pending",
   Paid: "paid",
   Overdue: "overdue",
   Partial: "partial",
+  Returned: "pending",
+  "Partially Returned": "pending",
 };
 const money = (value: number) => `QAR ${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-function Invoices(props: { notify: (message: string) => void; onCreate?: () => void; refreshTrigger?: number }) {
-  const { notify, refreshTrigger } = props;
+function Invoices(props: { notify: (message: string) => void; onCreate?: (initialTab?: string, invoiceId?: string) => void; refreshTrigger?: number }) {
+  const { notify, refreshTrigger, onCreate } = props;
   const [invoices, setInvoices] = useState(initialInvoices);
+  const [invoiceTypeTab, setInvoiceTypeTab] = useState<'Service' | 'Parts'>('Service');
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>({ type: 'today' });
   const [selectedId, setSelectedId] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All Status");
@@ -68,9 +76,43 @@ function Invoices(props: { notify: (message: string) => void; onCreate?: () => v
   const [viewInfoTarget, setViewInfoTarget] = useState<ViewInfoTarget | null>(null);
 
   useEffect(() => {
-    invoicesApi.getAll({ limit: 50 })
+    invoicesApi.getAll({ limit: 100 })
       .then((res) => {
-        setInvoices(res.data || []);
+        const backendList: Invoice[] = res.data || [];
+        // Merge with local POS invoices so POS counter sales always appear
+        try {
+          const localPos = JSON.parse(localStorage.getItem('garage-pos-invoices') || '[]');
+          if (Array.isArray(localPos) && localPos.length > 0) {
+            const existingIds = new Set(backendList.map(inv => inv.id));
+            const convertedLocal: Invoice[] = localPos.filter(pos => !existingIds.has(pos.id)).map(pos => ({
+              id: pos.id,
+              customer: pos.customer?.name || 'Direct Customer',
+              phone: pos.customer?.phone || '',
+              email: '',
+              vehicle: pos.customer?.vehicle || 'Over The Counter',
+              year: '2024',
+              plate: pos.customer?.plate || '-',
+              workOrder: 'POS',
+              service: 'Parts Sale (POS)',
+              detail: `${pos.items?.length || 0} part(s) sold over-the-counter`,
+              status: pos.status || 'Paid',
+              date: pos.date || new Date().toLocaleDateString('en-GB'),
+              dueDate: pos.date || new Date().toLocaleDateString('en-GB'),
+              amount: pos.total || 0,
+              discount: 0,
+              advisor: 'Main Counter',
+              items: (pos.items || []).map((it: any) => ({
+                name: it.name || `Part #${it.productId}`,
+                quantity: it.quantity || 1,
+                unitPrice: it.price || 0,
+              })),
+              type: 'Parts',
+            }));
+            setInvoices([...convertedLocal, ...backendList]);
+            return;
+          }
+        } catch {}
+        setInvoices(backendList);
       })
       .catch((err) => {
         console.warn("Could not fetch invoices from backend:", err);
@@ -78,11 +120,14 @@ function Invoices(props: { notify: (message: string) => void; onCreate?: () => v
   }, [refreshTrigger]);
 
   const filteredInvoices = useMemo(() => invoices.filter((invoice) => {
+    const isParts = invoice.type === 'Parts' || invoice.service?.toLowerCase().includes('part') || invoice.workOrder === 'POS';
+    const matchesType = invoiceTypeTab === 'Parts' ? isParts : !isParts;
     const matchesSearch = `${invoice.id} ${invoice.customer} ${invoice.vehicle} ${invoice.service} ${invoice.detail} ${invoice.workOrder}`.toLowerCase().includes(search.trim().toLowerCase());
     const matchesStatus = statusFilter === "All Status" || invoice.status === statusFilter;
     const matchesAdvisor = advisorFilter === "All Service Advisors" || invoice.advisor === advisorFilter;
-    return matchesSearch && matchesStatus && matchesAdvisor;
-  }), [advisorFilter, invoices, search, statusFilter]);
+    const matchesDate = matchesDateFilter(invoice.date || (invoice as any).created_at, dateFilter);
+    return matchesType && matchesSearch && matchesStatus && matchesAdvisor && matchesDate;
+  }), [advisorFilter, invoices, search, statusFilter, invoiceTypeTab, dateFilter]);
   const pageCount = Math.max(1, Math.ceil(filteredInvoices.length / 10));
   const currentPage = Math.min(page, pageCount);
   const pageInvoices = filteredInvoices.slice((currentPage - 1) * 10, currentPage * 10);
@@ -92,6 +137,8 @@ function Invoices(props: { notify: (message: string) => void; onCreate?: () => v
     paid: invoices.filter((inv) => inv.status === "Paid").length,
     pending: invoices.filter((inv) => inv.status === "Pending" || inv.status === "Partial").length,
     overdue: invoices.filter((inv) => inv.status === "Overdue").length,
+    parts: invoices.filter((inv) => inv.type === 'Parts' || inv.service?.toLowerCase().includes('part') || inv.workOrder === 'POS').length,
+    service: invoices.filter((inv) => inv.type !== 'Parts' && !inv.service?.toLowerCase().includes('part') && inv.workOrder !== 'POS').length,
   };
 
   const markPaid = (targetInvoiceId?: string) => {
@@ -126,59 +173,138 @@ function Invoices(props: { notify: (message: string) => void; onCreate?: () => v
 
   return (
     <main className="invoice-management">
-      <header className="invoice-page-heading">
+      <header className="invoice-page-heading no-print">
         <div className="invoice-page-title">
           <span><FileText size={25} /></span>
           <div><h1>Invoices</h1><p>Manage customer invoices, payments, and billing records.</p></div>
         </div>
       </header>
-      <section className="invoice-metrics" aria-label="Invoice summary">
+      <section className="invoice-metrics no-print" aria-label="Invoice summary">
         <article><span className="invoice-metric-icon blue"><FileText size={20} /></span><div><strong>{counts.total}</strong><small>Total Invoices</small></div><Activity size={23} className="invoice-spark blue-text" /></article>
         <article><span className="invoice-metric-icon green"><CircleCheck size={20} /></span><div><strong>{counts.paid}</strong><small>Paid</small></div><Activity size={23} className="invoice-spark green-text" /></article>
         <article><span className="invoice-metric-icon orange"><Clock3 size={20} /></span><div><strong>{counts.pending}</strong><small>Pending</small></div><Activity size={23} className="invoice-spark orange-text" /></article>
         <article><span className="invoice-metric-icon red"><AlertCircle size={20} /></span><div><strong>{counts.overdue}</strong><small>Overdue</small></div><Activity size={23} className="invoice-spark red-text" /></article>
       </section>
-      <div className="invoice-management-layout">
+
+      {/* Invoice Type Tabs (Service, Parts) */}
+      <div className="invoice-type-tabs no-print" role="tablist" aria-label="Filter invoice types">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={invoiceTypeTab === 'Service'}
+          className={`invoice-type-tab-btn ${invoiceTypeTab === 'Service' ? 'active' : ''}`}
+          onClick={() => { setInvoiceTypeTab('Service'); setPage(1); }}
+        >
+          <Wrench size={16} />
+          <span>Service Invoices</span>
+          <span className="count-pill">{counts.service}</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={invoiceTypeTab === 'Parts'}
+          className={`invoice-type-tab-btn ${invoiceTypeTab === 'Parts' ? 'active' : ''}`}
+          onClick={() => { setInvoiceTypeTab('Parts'); setPage(1); }}
+        >
+          <Package size={16} />
+          <span>Parts Invoices (POS)</span>
+          <span className="count-pill">{counts.parts}</span>
+        </button>
+      </div>
+
+      <div className="invoice-management-layout no-print">
         <section className="invoice-list-card">
           <div className="invoice-filters">
             <label className="invoice-search"><Search size={16} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search by invoice number, customer name, vehicle..." aria-label="Search invoices" /></label>
-            <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }} aria-label="Filter by invoice status">
-              {["All Status", "Paid", "Pending", "Partial", "Overdue"].map((status) => <option key={status}>{status}</option>)}
-            </select>
-            <label className="invoice-date-filter"><CalendarDays size={15} /><span>14 Apr 2025 - 14 May 2025</span></label>
-            <select value={advisorFilter} onChange={(event) => { setAdvisorFilter(event.target.value); setPage(1); }} aria-label="Filter by service advisor">
-              {["All Service Advisors", "Ali Hassan", "M. Khan"].map((advisor) => <option key={advisor}>{advisor}</option>)}
-            </select>
+            <CustomDropdown
+              value={statusFilter}
+              onChange={(val) => { setStatusFilter(val); setPage(1); }}
+              ariaLabel="Filter by invoice status"
+              options={[
+                { value: "All Status", label: "All Status" },
+                { value: "Paid", label: "Paid", badge: "Completed", badgeColor: "green" },
+                { value: "Pending", label: "Pending", badge: "Awaiting", badgeColor: "orange" },
+                { value: "Partial", label: "Partial", badge: "Partially Paid", badgeColor: "blue" },
+                { value: "Overdue", label: "Overdue", badge: "Action Required", badgeColor: "red" },
+              ]}
+            />
+            <DateRangeFilter value={dateFilter} onChange={(df) => { setDateFilter(df); setPage(1); }} />
+            <CustomDropdown
+              value={advisorFilter}
+              onChange={(val) => { setAdvisorFilter(val); setPage(1); }}
+              ariaLabel="Filter by service advisor"
+              options={["All Service Advisors", "Ali Hassan", "M. Khan"]}
+            />
           </div>
           <div className="invoice-table-scroll">
             <table className="invoice-management-table">
               <thead><tr><th>#</th><th>Invoice No.</th><th>Customer</th><th>Vehicle</th><th>Related To / Service Type</th><th>Status</th><th>Created Date</th><th>Total (QAR)</th><th>Actions</th></tr></thead>
               <tbody>
-                {pageInvoices.map((invoice, index) => (
-                  <tr key={invoice.id} className={selectedInvoice?.id === invoice.id ? "selected" : ""} onClick={() => setSelectedId(invoice.id)}>
-                    <td>{(currentPage - 1) * 10 + index + 1}</td>
-                    <td><button className="invoice-id-link" onClick={(event) => { event.stopPropagation(); setSelectedId(invoice.id); }}>{invoice.id}</button></td>
-                    <td>{invoice.customer}</td>
-                    <td><span className="invoice-vehicle-cell"><CarFront size={25} /><span>{invoice.vehicle}<small>{invoice.year} · {invoice.plate}</small></span></span></td>
-                    <td>{invoice.service}<small className="invoice-muted-line">Work Order #{invoice.workOrder}</small></td>
-                    <td><span className={`invoice-status-badge ${statusClass[invoice.status]}`}>{invoice.status}</span></td>
-                    <td>{invoice.date}</td><td className="invoice-amount">{money(invoice.amount)}</td>
-                    <td>
-                      <button
-                        className="crm-table-view-btn"
-                        aria-label={`View info for ${invoice.id}`}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setSelectedId(invoice.id);
-                          setViewInfoTarget({ type: "invoice", data: invoice });
-                        }}
-                      >
-                        <Eye size={13} />
-                        <span>View Info</span>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {pageInvoices.map((invoice, index) => {
+                  const isParts = invoice.type === 'Parts' || invoice.service?.toLowerCase().includes('part') || invoice.workOrder === 'POS';
+                  return (
+                    <tr key={invoice.id} className={selectedInvoice?.id === invoice.id ? "selected" : ""} onClick={() => setSelectedId(invoice.id)}>
+                      <td>{(currentPage - 1) * 10 + index + 1}</td>
+                      <td><button className="invoice-id-link" onClick={(event) => { event.stopPropagation(); setSelectedId(invoice.id); }}>{invoice.id}</button></td>
+                      <td>{invoice.customer}</td>
+                      <td><span className="invoice-vehicle-cell"><CarFront size={25} /><span>{invoice.vehicle}<small>{invoice.year} · {invoice.plate}</small></span></span></td>
+                      <td>{invoice.service}<small className="invoice-muted-line">{isParts ? 'Counter Parts Sale' : `Work Order #${invoice.workOrder}`}</small></td>
+                      <td><span className={`invoice-status-badge ${statusClass[invoice.status] || 'pending'}`}>{invoice.status}</span></td>
+                      <td>{invoice.date}</td>
+                      <td className="invoice-amount">{money(invoice.amount)}</td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                          <button
+                            className="crm-table-view-btn"
+                            aria-label={`View info for ${invoice.id}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setSelectedId(invoice.id);
+                              setViewInfoTarget({ type: "invoice", data: invoice });
+                            }}
+                            title="View Info"
+                          >
+                            <Eye size={13} />
+                            <span>View</span>
+                          </button>
+                          <button
+                            className="crm-table-view-btn"
+                            style={{ background: '#f8fafc', borderColor: '#cbd5e1', color: '#334155' }}
+                            aria-label={`Reprint invoice ${invoice.id}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setSelectedId(invoice.id);
+                              setTimeout(() => window.print(), 100);
+                            }}
+                            title="Reprint Invoice"
+                          >
+                            <Printer size={13} />
+                            <span>Print</span>
+                          </button>
+                          {isParts && (
+                            <button
+                              className="crm-table-view-btn"
+                              style={{ background: '#fff7ed', borderColor: '#fed7aa', color: '#ea580c' }}
+                              aria-label={`Return items from ${invoice.id}`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (onCreate) {
+                                  onCreate('returns', invoice.id);
+                                } else {
+                                  notify(`Switch to POS Returns to refund invoice ${invoice.id}`);
+                                }
+                              }}
+                              title="Process Return"
+                            >
+                              <RotateCcw size={13} />
+                              <span>Return</span>
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
                 {filteredInvoices.length === 0 && <tr><td colSpan={9} className="invoice-empty">No invoices match the selected filters.</td></tr>}
               </tbody>
             </table>
@@ -220,22 +346,49 @@ function Invoices(props: { notify: (message: string) => void; onCreate?: () => v
                 <span>View Full Info &amp; History</span>
               </button>
               <div className="invoice-detail-actions" style={{ marginTop: 0 }}>
-                <button onClick={() => window.print()}><Printer size={14} />Reprint Invoice</button>
+                {selectedInvoice.status !== "Paid" && selectedInvoice.status !== "Returned" && (
+                  <button className="mark-paid" onClick={() => markPaid()} style={{ gridColumn: "1 / -1" }}>
+                    <Check size={14} />
+                    <span>Mark Paid</span>
+                  </button>
+                )}
+                <button onClick={() => window.print()} title="Reprint Invoice">
+                  <Printer size={14} />
+                  <span>Reprint</span>
+                </button>
                 <button onClick={() => {
                   if (navigator.clipboard) {
                     navigator.clipboard.writeText(`${window.location.origin}/#invoice-${selectedInvoice.id}`);
                   }
                   notify(`Invoice link for ${selectedInvoice.id} copied.`);
-                }}><Share2 size={14} />Share</button>
-                <button
-                  style={{ borderColor: "#fecaca", background: "#fff1f2", color: "#e11d48", fontWeight: 600 }}
-                  onClick={() => setDeleteModalInvoice(selectedInvoice)}
-                >
-                  <Trash2 size={14} />Delete Invoice
+                }} title="Share Invoice">
+                  <Share2 size={14} />
+                  <span>Share</span>
                 </button>
-                {selectedInvoice.status !== "Paid" && (
-                  <button className="mark-paid" onClick={() => markPaid()}><Check size={14} />Mark Paid</button>
+                {(selectedInvoice.type === 'Parts' || selectedInvoice.service?.toLowerCase().includes('part') || selectedInvoice.workOrder === 'POS') && (
+                  <button
+                    style={{ borderColor: "#fed7aa", background: "#fff7ed", color: "#c2410c", fontWeight: 600, gridColumn: "1 / -1" }}
+                    onClick={() => {
+                      if (onCreate) {
+                        onCreate('returns', selectedInvoice.id);
+                      } else {
+                        notify(`Switch to POS Returns to refund invoice ${selectedInvoice.id}`);
+                      }
+                    }}
+                    title="Process Return & Refund"
+                  >
+                    <RotateCcw size={14} />
+                    <span>Process Return / Refund</span>
+                  </button>
                 )}
+                <button
+                  style={{ borderColor: "#fecaca", background: "#fff1f2", color: "#e11d48", fontWeight: 600, gridColumn: "1 / -1" }}
+                  onClick={() => setDeleteModalInvoice(selectedInvoice)}
+                  title="Delete Invoice"
+                >
+                  <Trash2 size={14} />
+                  <span>Delete Invoice</span>
+                </button>
               </div>
             </div>
           </aside>
@@ -248,10 +401,17 @@ function Invoices(props: { notify: (message: string) => void; onCreate?: () => v
           <div className="printable-tax-invoice">
             {/* Tax Invoice Document Header */}
             <div className="tax-invoice-header">
-              <div className="tax-invoice-brand">
-                <h2>GARAGE WORKSPACE</h2>
-                <p>Auto Care &amp; Service Center · Doha, Qatar</p>
-                <p>Phone: +974 5555 1234 · C.R: 84920/1</p>
+              <div className="tax-invoice-brand" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <img
+                  src={`${import.meta.env.BASE_URL}Garage-crm-logo-light.png`}
+                  alt="Company Logo"
+                  style={{ height: "46px", width: "auto", objectFit: "contain" }}
+                />
+                <div>
+                  <h2>DOHA CENTRAL WORKSHOP</h2>
+                  <p>Auto Care &amp; Service Hub · Bays 01–12 · Doha, Qatar</p>
+                  <p>Phone: +974 5555 1234 · C.R: 84920/1</p>
+                </div>
               </div>
               <div className="tax-invoice-meta">
                 <span className="tax-invoice-badge">TAX INVOICE / فاتورة ضريبية</span>
@@ -281,9 +441,9 @@ function Invoices(props: { notify: (message: string) => void; onCreate?: () => v
             <table className="tax-invoice-table">
               <thead>
                 <tr>
-                  <th style={{ textAlign: "left" }}>Description / Item</th>
-                  <th style={{ textAlign: "center", width: "55px" }}>Qty</th>
-                  <th style={{ textAlign: "right", width: "115px" }}>Amount (QAR)</th>
+                  <th style={{ textAlign: "left", width: "60%" }}>Description / Item</th>
+                  <th style={{ textAlign: "center", width: "15%" }}>Qty</th>
+                  <th style={{ textAlign: "right", width: "25%" }}>Amount (QAR)</th>
                 </tr>
               </thead>
               <tbody>

@@ -6,6 +6,7 @@ import {
   customersApi,
   vehiclesApi,
   partsApi,
+  mechanicsApi,
 } from "../lib/api";
 import {
   getNextWorkOrderId,
@@ -13,6 +14,7 @@ import {
   commitWorkOrderId,
   commitInvoiceId,
 } from "../lib/sequence";
+import { CustomDropdown } from "./CustomDropdown";
 import {
   ArrowLeft,
   ArrowRight,
@@ -22,12 +24,9 @@ import {
   ClipboardList,
   Clock,
   Download,
-  Eye,
   FileText,
   History,
-  MoreHorizontal,
   Printer,
-  Save,
   Search,
   Snowflake,
   Activity,
@@ -131,9 +130,16 @@ type PaymentRecord = {
   reference: string;
 };
 
+const getTodayIsoDate = () => new Date().toISOString().split("T")[0];
+const getValidUntilIsoDate = () => {
+  const d = new Date();
+  d.setDate(d.getDate() + 7);
+  return d.toISOString().split("T")[0];
+};
+
 const getInitialForm = (): IntakeFormData => ({
   workOrder: getNextWorkOrderId(),
-  date: "2025-04-14",
+  date: getTodayIsoDate(),
   advisor: "",
   source: "Walk-in",
   priority: "Normal",
@@ -207,9 +213,9 @@ const requestedServices: { name: string; icon: LucideIcon }[] = [
 const initialSelectedServices: string[] = [];
 const initialExternalParts: ExternalPart[] = [];
 const initialLabourCharges: LabourCharge[] = [];
-const initialQuotationDate = "2025-04-14";
-const initialQuotationValidUntil = "2025-04-21";
-const initialInvoiceDate = "2025-04-14";
+const initialQuotationDate = getTodayIsoDate();
+const initialQuotationValidUntil = getValidUntilIsoDate();
+const initialInvoiceDate = getTodayIsoDate();
 const initialPayments: PaymentRecord[] = [];
 const serviceOptions = [
   "Brake Service",
@@ -489,11 +495,32 @@ function NewIntake(props: {
   const [partName, setPartName] = useState("");
   const [partOriginalPrice, setPartOriginalPrice] = useState("");
   const [partCommission, setPartCommission] = useState("");
-  const [inventoryParts, setInventoryParts] = useState<any[]>([]);
+  const [inventoryParts, setInventoryParts] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem("garage_crm_parts_inventory_v1");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [];
+  });
   const [isOtherPart, setIsOtherPart] = useState(false);
   const [customPartName, setCustomPartName] = useState("");
+  const [availableMechanics, setAvailableMechanics] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("garage_crm_mechanics_v1");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((m: any) => m.name).filter(Boolean);
+        }
+      }
+    } catch {}
+    return ["Ali Hassan", "M. Khan", "Ahmed Raza", "Bilal Khan"];
+  });
   const [labourService, setLabourService] = useState("");
-  const [labourMechanic, setLabourMechanic] = useState("M. Khan");
+  const [labourMechanic, setLabourMechanic] = useState("Ali Hassan");
   const [labourAmount, setLabourAmount] = useState("");
   const [additionalName, setAdditionalName] = useState("");
   const [additionalAmount, setAdditionalAmount] = useState("");
@@ -519,19 +546,62 @@ function NewIntake(props: {
   const [paymentDate, setPaymentDate] = useState(initialInvoiceDate);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentReference, setPaymentReference] = useState("");
-  const [customerMode, setCustomerMode] = useState<CustomerMode>("new");
-  const [vehicleMode, setVehicleMode] = useState<VehicleMode>("new");
+  const [, setCustomerMode] = useState<CustomerMode>("new");
+  const [, setVehicleMode] = useState<VehicleMode>("new");
   const [step, setStep] = useState<IntakeStep>(1);
   const [documentType, setDocumentType] = useState<DocumentType>("Quotation");
-  const [moreOpen, setMoreOpen] = useState(false);
   const previewRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    partsApi.getAll({ limit: 100 }).then((res) => {
-      if (res.data) {
-        setInventoryParts(res.data);
+    // Dynamic mechanics loader
+    const loadMechanics = () => {
+      try {
+        const saved = localStorage.getItem("garage_crm_mechanics_v1");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const names = parsed.map((m: any) => m.name).filter(Boolean);
+            if (names.length > 0) setAvailableMechanics(names);
+          }
+        }
+      } catch {}
+
+      if (typeof mechanicsApi !== "undefined" && mechanicsApi?.getAll) {
+        mechanicsApi.getAll({ limit: 100 }).then((res) => {
+          if (res.data && res.data.length > 0) {
+            const names = res.data.map((m: any) => m.name).filter(Boolean);
+            if (names.length > 0) {
+              setAvailableMechanics(names);
+            }
+          }
+        }).catch(() => {});
       }
-    }).catch(() => {});
+    };
+
+    // Dynamic inventory parts loader
+    const loadParts = () => {
+      try {
+        const saved = localStorage.getItem("garage_crm_parts_inventory_v1");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) setInventoryParts(parsed);
+        }
+      } catch {}
+
+      if (typeof partsApi !== "undefined" && partsApi?.getAll) {
+        partsApi.getAll({ limit: 100 }).then((res) => {
+          if (res.data && res.data.length > 0) {
+            setInventoryParts(res.data);
+          }
+        }).catch(() => {});
+      }
+    };
+
+    loadMechanics();
+    loadParts();
+
+    window.addEventListener("garage_mechanics_updated", loadMechanics);
+    window.addEventListener("garage_parts_updated", loadParts);
 
     workOrdersApi.getAll({ limit: 100 }).then((res) => {
       if (res.data && res.data.length > 0) {
@@ -554,6 +624,11 @@ function NewIntake(props: {
         });
       }
     }).catch(() => {});
+
+    return () => {
+      window.removeEventListener("garage_mechanics_updated", loadMechanics);
+      window.removeEventListener("garage_parts_updated", loadParts);
+    };
   }, []);
 
   useEffect(() => {
@@ -840,69 +915,6 @@ function NewIntake(props: {
 
 
 
-  const saveDraft = () => {
-    try {
-      window.localStorage.setItem(
-        "garage-intake-draft",
-        JSON.stringify({
-          form,
-          customer,
-          vehicle,
-          complaint,
-          selectedComplaints,
-          selectedServices,
-          externalParts,
-          labourCharges,
-          additionalCharges,
-          quotationDiscount,
-          quotationNotes,
-          quotationDate,
-          quotationValidUntil,
-          quotationStatus,
-          repairDate,
-          completionDate,
-          repairStatus,
-          vehicleReady,
-          technicianNotes,
-          invoiceDate,
-          invoiceDueDate,
-          paymentTerms,
-          invoiceNotes,
-          invoiceItemsTab,
-          invoicePreviewTab,
-          paymentMethod,
-          payments,
-          paymentDate,
-          paymentAmount,
-          paymentReference,
-          customerMode,
-          vehicleMode,
-          invoiceNumber,
-          step,
-        }),
-      );
-      notify("Intake draft saved on this device.");
-
-      // Sync work order to MongoDB Atlas
-      workOrdersApi.create({
-        workOrderId: form.workOrder,
-        customer: customer.name || 'Walk-in Customer',
-        customerPhone: customer.mobile || customer.phone || '',
-        vehicle: `${vehicle.make} ${vehicle.model}`.trim() || 'Vehicle',
-        plate: vehicle.plateNumber || 'TBD',
-        year: vehicle.year || '2024',
-        service: selectedServices[0] || 'General Service',
-        detail: selectedComplaints.join(', ') || complaint || 'Service',
-        mechanic: form.mechanic || 'Ali Hassan',
-        status: repairStatus || form.status || 'In Progress',
-        total: quotationTotal || 0,
-      }).catch(err => console.warn("Work order sync error:", err));
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : "Unknown storage error";
-      notify(`Could not save the intake draft: ${detail}`);
-    }
-  };
-
   const resetForm = (showNotice = true) => {
     setForm(getInitialForm());
     setInvoiceNumber(getNextInvoiceId());
@@ -948,7 +960,6 @@ function NewIntake(props: {
     setCustomerMode("new");
     setVehicleMode("new");
     setStep(1);
-    setMoreOpen(false);
     try {
       window.localStorage.removeItem("garage-intake-draft");
       if (showNotice) {
@@ -970,11 +981,6 @@ function NewIntake(props: {
       resetForm(false);
     }
   }, [isWorkOrders]);
-
-  const focusPreview = () => {
-    previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    previewRef.current?.focus({ preventScroll: true });
-  };
 
   const history = customerHistory[customer.name as keyof typeof customerHistory] ?? {
     vehicles: "0",
@@ -1148,20 +1154,38 @@ function NewIntake(props: {
       }
     }
 
+    const quoteEffectiveDate = quotationDate || form.date || getTodayIsoDate();
+    const newQuoteRecord = {
+      id: quoteNumber || `QT-${Math.floor(10000 + Math.random() * 90000)}`,
+      quotationId: quoteNumber,
+      customer: customer.name || 'Customer',
+      vehicle: vehicle.carName || `${vehicle.make} ${vehicle.model}`.trim() || 'Vehicle',
+      plate: vehicle.plateNumber || 'TBD',
+      year: vehicle.year || '2024',
+      service: selectedServices[0] || 'General Service',
+      detail: selectedComplaints.join(', ') || complaint || 'General Service',
+      amount: quotationTotal,
+      status: dbStatus as any,
+      advisor: form.advisor || 'Ali Hassan',
+      date: quoteEffectiveDate,
+      items: quoteItems,
+    };
+
+    // Immediately cache in localStorage so it appears in Quotations tab instantly
     try {
-      await quotationsApi.create({
-        customer: customer.name || 'Customer',
-        vehicle: vehicle.carName || `${vehicle.make} ${vehicle.model}`.trim() || 'Vehicle',
-        plate: vehicle.plateNumber || 'TBD',
-        year: vehicle.year || '2024',
-        service: selectedServices[0] || 'General Service',
-        detail: selectedComplaints.join(', ') || complaint || 'General Service',
-        amount: quotationTotal,
-        status: dbStatus,
-        advisor: form.advisor || 'Ali Hassan',
-        date: form.date || new Date().toISOString().split('T')[0],
-        items: quoteItems,
-      });
+      const LOCAL_KEY = "garage_crm_quotations_v1";
+      const existing = localStorage.getItem(LOCAL_KEY);
+      const parsedList = existing ? JSON.parse(existing) : [];
+      const updatedList = [newQuoteRecord, ...parsedList.filter((q: any) => q.id !== newQuoteRecord.id)];
+      localStorage.setItem(LOCAL_KEY, JSON.stringify(updatedList));
+      window.dispatchEvent(new CustomEvent("garage_quotations_updated"));
+    } catch (e) {
+      console.warn("Could not cache quote to localStorage:", e);
+    }
+
+    try {
+      await quotationsApi.create(newQuoteRecord);
+      window.dispatchEvent(new CustomEvent("garage_quotations_updated"));
     } catch (err) {
       console.warn("Quotation sync error:", err);
     }
@@ -1369,41 +1393,6 @@ function NewIntake(props: {
           <strong>Work Order: {form.workOrder || "—"}</strong>
           <span className={`intake-status${step === 9 || repairStatus === "Completed" ? " completed" : ""}`}>{step === 9 ? paymentStatus : step === 8 ? "Repair Completed" : step === 7 ? repairStatus : form.status}</span>
         </div>
-        <div className="intake-actions">
-          <button className="intake-action-button dark" onClick={saveDraft}>
-            <Save size={16} />
-            <span>Save Draft</span>
-          </button>
-          <button className="intake-action-button blue" onClick={focusPreview}>
-            <Eye size={16} />
-            <span>Preview</span>
-          </button>
-          <button
-            className="intake-action-button outline"
-            onClick={() => window.print()}
-          >
-            <Printer size={16} />
-            <span>Print</span>
-          </button>
-          <div className="intake-more">
-            <button
-              className="intake-action-button outline more-toggle"
-              aria-expanded={moreOpen}
-              onClick={() => setMoreOpen((open) => !open)}
-            >
-              <span>More</span>
-              <ChevronDown size={15} />
-            </button>
-            {moreOpen && (
-              <div className="intake-more-menu">
-                <button onClick={() => resetForm()}>
-                  <MoreHorizontal size={15} />
-                  Restore sample values
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
       </div>
 
       <div className="intake-layout">
@@ -1440,48 +1429,43 @@ function NewIntake(props: {
             </label>
             <label className="intake-field">
               <span>Service Advisor</span>
-              <select
+              <CustomDropdown
                 value={form.advisor}
-                onChange={(event) => update("advisor", event.target.value)}
-              >
-                <option>Sheikh Ahmed</option>
-                <option>Ali Hassan</option>
-                <option>M. Khan</option>
-              </select>
+                onChange={(val) => update("advisor", val)}
+                options={["Sheikh Ahmed", "Ali Hassan", "M. Khan"]}
+              />
             </label>
             <label className="intake-field">
               <span>Job Source</span>
-              <select
+              <CustomDropdown
                 value={form.source}
-                onChange={(event) => update("source", event.target.value)}
-              >
-                <option>Walk-in</option>
-                <option>Phone</option>
-                <option>Online booking</option>
-                <option>Referral</option>
-              </select>
+                onChange={(val) => update("source", val)}
+                options={["Walk-in", "Phone", "Online booking", "Referral"]}
+              />
             </label>
             <label className="intake-field">
               <span>Priority</span>
-              <select
+              <CustomDropdown
                 value={form.priority}
-                onChange={(event) => update("priority", event.target.value)}
-              >
-                <option>Normal</option>
-                <option>High</option>
-                <option>Urgent</option>
-              </select>
+                onChange={(val) => update("priority", val)}
+                options={[
+                  { value: "Normal", label: "Normal", badge: "Standard", badgeColor: "blue" },
+                  { value: "High", label: "High", badge: "Expedited", badgeColor: "orange" },
+                  { value: "Urgent", label: "Urgent", badge: "Immediate", badgeColor: "red" },
+                ]}
+              />
             </label>
             <label className="intake-field">
               <span>Job Status</span>
-              <select
+              <CustomDropdown
                 value={form.status}
-                onChange={(event) => update("status", event.target.value)}
-              >
-                <option>In Progress</option>
-                <option>Awaiting Parts</option>
-                <option>Ready for Delivery</option>
-              </select>
+                onChange={(val) => update("status", val)}
+                options={[
+                  { value: "In Progress", label: "In Progress", badge: "Active", badgeColor: "blue" },
+                  { value: "Awaiting Parts", label: "Awaiting Parts", badge: "Waiting", badgeColor: "orange" },
+                  { value: "Ready for Delivery", label: "Ready for Delivery", badge: "Ready", badgeColor: "green" },
+                ]}
+              />
             </label>
             <label className="intake-field">
               <span>Expected Completion Date</span>
@@ -1506,15 +1490,20 @@ function NewIntake(props: {
           <div className="intake-fields intake-assignment">
             <label className="intake-field">
               <span>Assign Mechanic <small>(Optional)</small></span>
-              <select
+              <CustomDropdown
                 value={form.mechanic}
-                onChange={(event) => update("mechanic", event.target.value)}
-              >
-                <option value="">Select Mechanic</option>
-                <option>Ali Hassan</option>
-                <option>M. Khan</option>
-                <option>Ali Shah</option>
-              </select>
+                onChange={(val) => update("mechanic", val)}
+                placeholder="Select Mechanic"
+                options={[
+                  { value: "", label: "Select Mechanic (Optional)" },
+                  ...availableMechanics.map((name) => ({
+                    value: name,
+                    label: name,
+                    badge: "Technician",
+                    badgeColor: "blue" as const,
+                  })),
+                ]}
+              />
             </label>
             <label className="intake-field">
               <span>Estimated Completion</span>
@@ -1594,13 +1583,16 @@ function NewIntake(props: {
                 </label>
                 <label className="intake-field">
                   <span>Customer Type <b>*</b></span>
-                  <select
+                  <CustomDropdown
                     value={customer.type}
-                    onChange={(event) => updateCustomer("type", event.target.value)}
-                  >
-                    <option>Individual</option>
-                    <option>Business</option>
-                  </select>
+                    onChange={(val) => updateCustomer("type", val)}
+                    options={[
+                      { value: "Individual", label: "Individual", badge: "Personal", badgeColor: "blue" },
+                      { value: "Business", label: "Business / Corporate", badge: "Business", badgeColor: "purple" },
+                      { value: "Fleet", label: "Fleet Customer", badge: "Fleet", badgeColor: "orange" },
+                      { value: "VIP", label: "VIP Customer", badge: "VIP", badgeColor: "green" },
+                    ]}
+                  />
                 </label>
                 <label className="intake-field">
                   <span>ID / Civil No. <small>(Optional)</small></span>
@@ -1699,14 +1691,25 @@ function NewIntake(props: {
                 </label>
                 <label className="intake-field">
                   <span>Make <b>*</b></span>
-                  <select value={vehicle.make} onChange={(event) => updateVehicle("make", event.target.value)}>
-                    <option>Toyota</option>
-                    <option>BMW</option>
-                    <option>Lexus</option>
-                    <option>Nissan</option>
-                    <option>Mercedes-Benz</option>
-                    <option>Other</option>
-                  </select>
+                  <CustomDropdown
+                    value={vehicle.make || "Toyota"}
+                    onChange={(val) => updateVehicle("make", val)}
+                    options={[
+                      { value: "Toyota", label: "Toyota", badge: "Popular", badgeColor: "orange" },
+                      { value: "BMW", label: "BMW", badge: "German", badgeColor: "blue" },
+                      { value: "Lexus", label: "Lexus", badge: "Luxury", badgeColor: "purple" },
+                      { value: "Nissan", label: "Nissan", badge: "Popular", badgeColor: "orange" },
+                      { value: "Mercedes-Benz", label: "Mercedes-Benz", badge: "Luxury", badgeColor: "blue" },
+                      { value: "Land Rover", label: "Land Rover", badge: "SUV", badgeColor: "green" },
+                      { value: "Porsche", label: "Porsche", badge: "Sports", badgeColor: "red" },
+                      { value: "Audi", label: "Audi", badge: "German", badgeColor: "blue" },
+                      { value: "Ford", label: "Ford", badge: "American", badgeColor: "blue" },
+                      { value: "Chevrolet", label: "Chevrolet" },
+                      { value: "Hyundai", label: "Hyundai" },
+                      { value: "Kia", label: "Kia" },
+                      { value: "Other", label: "Other Make" },
+                    ]}
+                  />
                 </label>
                 <label className="intake-field">
                   <span>Model <b>*</b></span>
@@ -1749,30 +1752,45 @@ function NewIntake(props: {
                 </label>
                 <label className="intake-field">
                   <span>Fuel Type</span>
-                  <select value={vehicle.fuelType} onChange={(event) => updateVehicle("fuelType", event.target.value)}>
-                    <option>Petrol</option>
-                    <option>Diesel</option>
-                    <option>Hybrid</option>
-                    <option>Electric</option>
-                  </select>
+                  <CustomDropdown
+                    value={vehicle.fuelType}
+                    onChange={(val) => updateVehicle("fuelType", val)}
+                    options={[
+                      { value: "Petrol", label: "Petrol" },
+                      { value: "Diesel", label: "Diesel" },
+                      { value: "Hybrid", label: "Hybrid" },
+                      { value: "Electric", label: "Electric" },
+                    ]}
+                  />
                 </label>
                 <label className="intake-field">
                   <span>Transmission</span>
-                  <select value={vehicle.transmission} onChange={(event) => updateVehicle("transmission", event.target.value)}>
-                    <option>Automatic</option>
-                    <option>Manual</option>
-                  </select>
+                  <CustomDropdown
+                    value={vehicle.transmission}
+                    onChange={(val) => updateVehicle("transmission", val)}
+                    options={[
+                      { value: "Automatic", label: "Automatic" },
+                      { value: "Manual", label: "Manual" },
+                      { value: "CVT", label: "CVT" },
+                      { value: "Dual-Clutch", label: "Dual-Clutch" },
+                    ]}
+                  />
                 </label>
                 <label className="intake-field">
                   <span>Vehicle Type</span>
-                  <select value={vehicle.vehicleType} onChange={(event) => updateVehicle("vehicleType", event.target.value)}>
-                    <option>SUV</option>
-                    <option>Sedan</option>
-                    <option>Coupe</option>
-                    <option>Pickup</option>
-                    <option>Van</option>
-                    <option>Other</option>
-                  </select>
+                  <CustomDropdown
+                    value={vehicle.vehicleType}
+                    onChange={(val) => updateVehicle("vehicleType", val)}
+                    options={[
+                      { value: "Sedan", label: "Sedan" },
+                      { value: "SUV", label: "SUV" },
+                      { value: "Coupe", label: "Coupe" },
+                      { value: "Pickup", label: "Pickup" },
+                      { value: "Van", label: "Van" },
+                      { value: "Hatchback", label: "Hatchback" },
+                      { value: "Other", label: "Other" },
+                    ]}
+                  />
                 </label>
                 <label className="intake-field">
                   <span>Body Type</span>
@@ -1986,12 +2004,12 @@ function NewIntake(props: {
                     <section className="intake-quotation-panel">
                       <h3>Add External Parts</h3>
                       <div className="intake-quotation-entry intake-part-entry">
-                        <label className="intake-field" style={{ minWidth: "220px" }}>
+                        <label className="intake-field" style={{ minWidth: "240px" }}>
                           <span>Part Name <b>*</b></span>
-                          <select
+                          <CustomDropdown
                             value={isOtherPart ? "__OTHER__" : partName}
-                            onChange={(event) => {
-                              const val = event.target.value;
+                            placeholder="Select part from inventory..."
+                            onChange={(val) => {
                               if (val === "__OTHER__") {
                                 setIsOtherPart(true);
                                 setPartName("");
@@ -2009,15 +2027,23 @@ function NewIntake(props: {
                                 }
                               }
                             }}
-                          >
-                            <option value="">Select part from inventory...</option>
-                            {inventoryParts.map((part) => (
-                              <option key={part.id || part.name} value={part.name}>
-                                {part.name} (Stock: {part.quantity ?? 0}) — QAR {part.sellingPrice || part.unitCost || 0}
-                              </option>
-                            ))}
-                            <option value="__OTHER__">+ Other Part (Custom Entry)</option>
-                          </select>
+                            options={[
+                              ...inventoryParts.map((part) => ({
+                                value: part.name,
+                                label: part.name,
+                                detail: `Stock: ${part.quantity ?? 0} · QAR ${part.sellingPrice || part.unitCost || 0}`,
+                                badge: (part.quantity ?? 0) > 0 ? "In Stock" : "0 Stock",
+                                badgeColor: ((part.quantity ?? 0) > 0 ? "green" : "orange") as "green" | "orange",
+                              })),
+                              {
+                                value: "__OTHER__",
+                                label: "+ Other Part (Custom Entry)",
+                                detail: "Enter manual part name and price",
+                                badge: "Custom",
+                                badgeColor: "purple" as const,
+                              },
+                            ]}
+                          />
                         </label>
                         {isOtherPart && (
                           <label className="intake-field">
@@ -2108,18 +2134,33 @@ function NewIntake(props: {
                     <section className="intake-quotation-panel">
                       <h3>Labour Charges</h3>
                       <div className="intake-quotation-entry intake-labour-entry">
-                        <label className="intake-field">
+                        <label className="intake-field" style={{ minWidth: "200px" }}>
                           <span>Service Name <b>*</b></span>
-                          <select value={labourService} onChange={(event) => setLabourService(event.target.value)}>
-                            <option value="">Select or type service...</option>
-                            {serviceOptions.map((service) => <option key={service}>{service}</option>)}
-                          </select>
+                          <CustomDropdown
+                            value={labourService}
+                            placeholder="Select service..."
+                            onChange={(val) => setLabourService(val)}
+                            options={serviceOptions.map((service) => ({
+                              value: service,
+                              label: service,
+                              badge: "Service",
+                              badgeColor: "blue" as const,
+                            }))}
+                          />
                         </label>
-                        <label className="intake-field">
+                        <label className="intake-field" style={{ minWidth: "180px" }}>
                           <span>Mechanic</span>
-                          <select value={labourMechanic} onChange={(event) => setLabourMechanic(event.target.value)}>
-                            <option>M. Khan</option><option>Ali Hassan</option><option>Ali Shah</option>
-                          </select>
+                          <CustomDropdown
+                            value={labourMechanic}
+                            placeholder="Select technician..."
+                            onChange={(val) => setLabourMechanic(val)}
+                            options={availableMechanics.map((mech) => ({
+                              value: mech,
+                              label: mech,
+                              badge: "Technician",
+                              badgeColor: "orange" as const,
+                            }))}
+                          />
                         </label>
                         <label className="intake-field">
                           <span>Labour Amount (QAR) <b>*</b></span>
@@ -2386,9 +2427,17 @@ function NewIntake(props: {
                   </label>
                   <label className="intake-field">
                     <span>Assigned Mechanic <b>*</b></span>
-                    <select value={form.mechanic || labourCharges[0]?.mechanic || "M. Khan"} onChange={(event) => update("mechanic", event.target.value)}>
-                      <option>M. Khan</option><option>Ali Hassan</option><option>Ali Shah</option>
-                    </select>
+                    <CustomDropdown
+                      value={form.mechanic || labourCharges[0]?.mechanic || availableMechanics[0] || ""}
+                      onChange={(val) => update("mechanic", val)}
+                      placeholder="Select mechanic..."
+                      options={availableMechanics.map((mech) => ({
+                        value: mech,
+                        label: mech,
+                        badge: "Mechanic",
+                        badgeColor: "orange" as const,
+                      }))}
+                    />
                   </label>
                   <label className="intake-field">
                     <span>Repair Status <b>*</b></span>
@@ -2733,7 +2782,7 @@ function NewIntake(props: {
         >
           {/* Document Type Switcher Tabs (Quotation, Work Order, Invoice, Gate Pass) */}
           <div
-            className="intake-preview-doc-tabs"
+            className="intake-preview-doc-tabs no-print"
             style={{
               display: "flex",
               gap: "4px",
@@ -2774,7 +2823,22 @@ function NewIntake(props: {
           </div>
 
           <article className="intake-preview-paper">
-            <header className="intake-paper-header">
+            <header className="intake-paper-header" style={{ alignItems: "flex-start", paddingTop: "0px", paddingBottom: "10px" }}>
+              <div className="intake-paper-brand" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <img
+                  src={`${import.meta.env.BASE_URL}Garage-crm-logo-light.png`}
+                  alt="Company Logo"
+                  style={{ height: "48px", width: "auto", objectFit: "contain", display: "block" }}
+                />
+                <div>
+                  <strong style={{ fontSize: "14px", fontWeight: 800, color: "#1e293b", display: "block", lineHeight: 1.2 }}>
+                    DOHA CENTRAL WORKSHOP
+                  </strong>
+                  <span style={{ fontSize: "10px", color: "#64748b", fontWeight: 500, display: "block", marginTop: "2px" }}>
+                    Auto Care &amp; Service Hub · Bays 01–12
+                  </span>
+                </div>
+              </div>
               <div>
                 <strong>
                   {documentType === "Gate Pass"
@@ -3071,7 +3135,7 @@ function NewIntake(props: {
             )}
           </article>
 
-          <div className="intake-preview-controls" aria-hidden="true">
+          <div className="intake-preview-controls no-print" aria-hidden="true">
             <button tabIndex={-1} aria-label="Previous page">
               <ArrowLeft size={14} />
             </button>
@@ -3084,7 +3148,7 @@ function NewIntake(props: {
             </button>
           </div>
 
-          <div className="intake-preview-actions">
+          <div className="intake-preview-actions no-print">
             <button className="blue" onClick={() => window.print()}>
               <Printer size={16} />
               Print {documentType}

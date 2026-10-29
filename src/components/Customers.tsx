@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { customersApi } from "../lib/api";
 import ViewInfoModal, { type ViewInfoTarget } from "./ViewInfoModal";
+import { CustomDropdown } from "./CustomDropdown";
+import { DateRangeFilter, type DateFilterValue, matchesDateFilter } from "./DateRangeFilter";
 import {
   Activity,
   CalendarDays,
@@ -53,6 +55,7 @@ function Customers({ notify, onCreateWorkOrder: _onCreateWorkOrder, refreshTrigg
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("All Customer Types");
   const [statusFilter, setStatusFilter] = useState("All Status");
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>({ type: 'today' });
   const [page, setPage] = useState(1);
   const [viewInfoTarget, setViewInfoTarget] = useState<ViewInfoTarget | null>(null);
 
@@ -70,8 +73,9 @@ function Customers({ notify, onCreateWorkOrder: _onCreateWorkOrder, refreshTrigg
     const matchesSearch = `${customer.id} ${customer.name} ${customer.phone} ${customer.email}`.toLowerCase().includes(search.trim().toLowerCase());
     const matchesType = typeFilter === "All Customer Types" || customer.type === typeFilter;
     const matchesStatus = statusFilter === "All Status" || customer.status === statusFilter;
-    return matchesSearch && matchesType && matchesStatus;
-  }), [customers, search, statusFilter, typeFilter]);
+    const matchesDate = matchesDateFilter(customer.lastVisit || (customer as any).createdAt, dateFilter);
+    return matchesSearch && matchesType && matchesStatus && matchesDate;
+  }), [customers, search, statusFilter, typeFilter, dateFilter]);
   const pageCount = Math.max(1, Math.ceil(filteredCustomers.length / 10));
   const currentPage = Math.min(page, pageCount);
   const pageCustomers = filteredCustomers.slice((currentPage - 1) * 10, currentPage * 10);
@@ -98,9 +102,25 @@ function Customers({ notify, onCreateWorkOrder: _onCreateWorkOrder, refreshTrigg
         <section className="customer-list-card">
           <div className="customer-filters">
             <label className="customer-search"><Search size={16} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search by customer name, phone, or customer ID..." aria-label="Search customers" /></label>
-            <select value={typeFilter} onChange={(event) => { setTypeFilter(event.target.value); setPage(1); }} aria-label="Filter by customer type">{["All Customer Types", "Individual", "Fleet", "Corporate"].map((type) => <option key={type}>{type}</option>)}</select>
-            <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }} aria-label="Filter by customer status">{["All Status", "Active", "VIP", "Inactive", "Corporate"].map((status) => <option key={status}>{status}</option>)}</select>
-            <label className="customer-date-filter"><CalendarDays size={15} /><span>Last Visit (All Dates)</span></label>
+            <CustomDropdown
+              value={typeFilter}
+              onChange={(val) => { setTypeFilter(val); setPage(1); }}
+              ariaLabel="Filter by customer type"
+              options={["All Customer Types", "Individual", "Fleet", "Corporate"]}
+            />
+            <CustomDropdown
+              value={statusFilter}
+              onChange={(val) => { setStatusFilter(val); setPage(1); }}
+              ariaLabel="Filter by customer status"
+              options={[
+                { value: "All Status", label: "All Status" },
+                { value: "Active", label: "Active", badge: "Regular", badgeColor: "green" },
+                { value: "VIP", label: "VIP", badge: "Priority", badgeColor: "orange" },
+                { value: "Inactive", label: "Inactive", badge: "Dormant", badgeColor: "red" },
+                { value: "Corporate", label: "Corporate", badge: "Account", badgeColor: "blue" },
+              ]}
+            />
+            <DateRangeFilter value={dateFilter} onChange={(df) => { setDateFilter(df); setPage(1); }} labelPrefix="Last Visit" />
           </div>
           <div className="customer-table-scroll">
             <table className="customer-management-table">

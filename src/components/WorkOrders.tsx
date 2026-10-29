@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { workOrdersApi, invoicesApi } from "../lib/api";
 import { getNextInvoiceId, commitInvoiceId } from "../lib/sequence";
 import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
+import { CustomDropdown } from "./CustomDropdown";
+import { DateRangeFilter, type DateFilterValue, matchesDateFilter } from "./DateRangeFilter";
 import {
   Activity,
   ArrowLeft,
-  CalendarDays,
   CarFront,
   Check,
   ChevronLeft,
@@ -79,6 +80,7 @@ function WorkOrders(props: {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All Status");
   const [mechanicFilter, setMechanicFilter] = useState("All Mechanics");
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>({ type: 'today' });
   const [page, setPage] = useState(1);
 
   // Selected Order Edit States
@@ -163,9 +165,10 @@ function WorkOrders(props: {
         statusFilter === "All Status" || order.status === statusFilter;
       const matchesMechanic =
         mechanicFilter === "All Mechanics" || order.mechanic === mechanicFilter;
-      return matchesSearch && matchesStatus && matchesMechanic;
+      const matchesDate = matchesDateFilter(order.date || order.createdAt, dateFilter);
+      return matchesSearch && matchesStatus && matchesMechanic && matchesDate;
     });
-  }, [orders, search, statusFilter, mechanicFilter]);
+  }, [orders, search, statusFilter, mechanicFilter, dateFilter]);
 
   const pageCount = Math.max(1, Math.ceil(filteredOrders.length / 10));
   const currentPage = Math.min(page, pageCount);
@@ -346,47 +349,44 @@ function WorkOrders(props: {
                 aria-label="Search work orders"
               />
             </label>
-            <select
+            <CustomDropdown
               value={statusFilter}
-              onChange={(event) => {
-                setStatusFilter(event.target.value);
+              onChange={(val) => {
+                setStatusFilter(val);
                 setPage(1);
               }}
-              aria-label="Filter by work order status"
-            >
-              {[
-                "All Status",
-                "In Progress",
-                "Ready for Delivery",
-                "Completed",
-                "Invoiced",
-                "Awaiting Parts",
-              ].map((status) => (
-                <option key={status}>{status}</option>
-              ))}
-            </select>
-            <label className="quote-date-filter">
-              <CalendarDays size={15} />
-              <span>Active Orders</span>
-            </label>
-            <select
+              ariaLabel="Filter by work order status"
+              options={[
+                { value: "All Status", label: "All Status" },
+                { value: "In Progress", label: "In Progress", badge: "Live", badgeColor: "blue" },
+                { value: "Ready for Delivery", label: "Ready for Delivery", badge: "Ready", badgeColor: "green" },
+                { value: "Completed", label: "Completed", badge: "Done", badgeColor: "green" },
+                { value: "Invoiced", label: "Invoiced", badge: "Billed", badgeColor: "purple" },
+                { value: "Awaiting Parts", label: "Awaiting Parts", badge: "Waiting", badgeColor: "orange" },
+              ]}
+            />
+            <DateRangeFilter
+              value={dateFilter}
+              onChange={(df) => {
+                setDateFilter(df);
+                setPage(1);
+              }}
+            />
+            <CustomDropdown
               value={mechanicFilter}
-              onChange={(event) => {
-                setMechanicFilter(event.target.value);
+              onChange={(val) => {
+                setMechanicFilter(val);
                 setPage(1);
               }}
-              aria-label="Filter by assigned mechanic"
-            >
-              {[
+              ariaLabel="Filter by assigned mechanic"
+              options={[
                 "All Mechanics",
                 "Ali Hassan",
                 "M. Khan",
                 "Ali Shah",
                 "Sheikh Ahmed",
-              ].map((m) => (
-                <option key={m}>{m}</option>
-              ))}
-            </select>
+              ]}
+            />
           </div>
 
           <div className="quote-table-scroll">
@@ -1001,10 +1001,17 @@ function WorkOrders(props: {
           <div className="printable-tax-invoice">
             {/* Tax Invoice Document Header */}
             <div className="tax-invoice-header">
-              <div className="tax-invoice-brand">
-                <h2>GARAGE WORKSPACE</h2>
-                <p>Auto Care &amp; Service Center · Doha, Qatar</p>
-                <p>Phone: +974 5555 1234 · C.R: 84920/1</p>
+              <div className="tax-invoice-brand" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <img
+                  src={`${import.meta.env.BASE_URL}Garage-crm-logo-light.png`}
+                  alt="Company Logo"
+                  style={{ height: "46px", width: "auto", objectFit: "contain" }}
+                />
+                <div>
+                  <h2>DOHA CENTRAL WORKSHOP</h2>
+                  <p>Auto Care &amp; Service Hub · Bays 01–12 · Doha, Qatar</p>
+                  <p>Phone: +974 5555 1234 · C.R: 84920/1</p>
+                </div>
               </div>
               <div className="tax-invoice-meta">
                 <span className="tax-invoice-badge" style={{ background: "#e1f7ea", color: "#078348", borderColor: "#a7f3d0" }}>
@@ -1117,10 +1124,17 @@ function WorkOrders(props: {
           <div className="printable-tax-invoice">
             {/* Tax Invoice Document Header */}
             <div className="tax-invoice-header">
-              <div className="tax-invoice-brand">
-                <h2>GARAGE WORKSPACE</h2>
-                <p>Auto Care &amp; Service Center · Doha, Qatar</p>
-                <p>Phone: +974 5555 1234 · C.R: 84920/1</p>
+              <div className="tax-invoice-brand" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <img
+                  src={`${import.meta.env.BASE_URL}Garage-crm-logo-light.png`}
+                  alt="Company Logo"
+                  style={{ height: "46px", width: "auto", objectFit: "contain" }}
+                />
+                <div>
+                  <h2>DOHA CENTRAL WORKSHOP</h2>
+                  <p>Auto Care &amp; Service Hub · Bays 01–12 · Doha, Qatar</p>
+                  <p>Phone: +974 5555 1234 · C.R: 84920/1</p>
+                </div>
               </div>
               <div className="tax-invoice-meta">
                 <span className="tax-invoice-badge">TAX INVOICE / فاتورة ضريبية</span>

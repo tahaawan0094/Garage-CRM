@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { quotationsApi, invoicesApi, workOrdersApi } from "../lib/api";
 import { getNextInvoiceId, commitInvoiceId } from "../lib/sequence";
 import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
+import { CustomDropdown } from "./CustomDropdown";
+import { DateRangeFilter, type DateFilterValue, matchesDateFilter } from "./DateRangeFilter";
 import {
   Activity,
-  CalendarDays,
   CarFront,
   Check,
   ChevronLeft,
@@ -40,7 +41,73 @@ type Quote = {
   items: QuoteItem[];
 };
 
-const initialQuotes: Quote[] = [];
+const LOCAL_STORAGE_QUOTES_KEY = "garage_crm_quotations_v1";
+
+const getTodayStr = () => new Date().toISOString().split("T")[0];
+const getYesterdayStr = () => {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().split("T")[0];
+};
+
+const defaultSeedQuotes: Quote[] = [
+  {
+    id: "QT-00018",
+    customer: "Vertexia Agency",
+    vehicle: "BMV Series 5",
+    year: "2023",
+    plate: "1217",
+    service: "Oil & Brake Service",
+    detail: "Full synthetic oil change and front ceramic brake pads",
+    status: "Pending",
+    date: getTodayStr(),
+    amount: 550,
+    advisor: "Ali Hassan",
+    items: [
+      { name: "Engine Oil 5W-40 (4L)", quantity: 1, unitPrice: 155 },
+      { name: "Oil Filter Bosch", quantity: 1, unitPrice: 55 },
+      { name: "Front Brake Pads", quantity: 1, unitPrice: 240 },
+      { name: "Labour - Oil & Brake Service", quantity: 1, unitPrice: 100 },
+    ],
+  },
+  {
+    id: "QT-00017",
+    customer: "Sheikh Ahmed",
+    vehicle: "Toyota Land Cruiser",
+    year: "2024",
+    plate: "8821",
+    service: "Comprehensive Service",
+    detail: "Periodic major service and multi-point safety check",
+    status: "Approved",
+    date: getYesterdayStr(),
+    amount: 1250,
+    advisor: "Ali Hassan",
+    items: [
+      { name: "Engine Oil 0W-20 (8L)", quantity: 2, unitPrice: 170 },
+      { name: "Transmission Fluid", quantity: 1, unitPrice: 195 },
+      { name: "Air & Cabin Filters", quantity: 2, unitPrice: 85 },
+      { name: "Labour - Full Service", quantity: 1, unitPrice: 545 },
+    ],
+  },
+  {
+    id: "QT-00016",
+    customer: "Hamad Al-Thani",
+    vehicle: "Porsche Cayenne",
+    year: "2022",
+    plate: "3390",
+    service: "AC System Overhaul",
+    detail: "AC compressor replacement & system gas charging",
+    status: "Awaiting Approval",
+    date: getYesterdayStr(),
+    amount: 2400,
+    advisor: "M. Khan",
+    items: [
+      { name: "AC Compressor OEM", quantity: 1, unitPrice: 1800 },
+      { name: "R134a Gas Refill", quantity: 1, unitPrice: 200 },
+      { name: "Labour Charges", quantity: 1, unitPrice: 400 },
+    ],
+  },
+];
 
 const statusClass: Record<QuoteStatus, string> = {
   "Awaiting Approval": "awaiting",
@@ -61,31 +128,84 @@ function Quotations({
   refreshTrigger?: number;
   onSynced?: () => void;
 }) {
-  const [quotes, setQuotes] = useState(initialQuotes);
+  const [quotes, setQuotes] = useState<Quote[]>(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_QUOTES_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return defaultSeedQuotes;
+  });
   const [selectedId, setSelectedId] = useState("");
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All Status");
   const [advisorFilter, setAdvisorFilter] = useState("All Service Advisors");
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>({ type: 'all' });
   const [deleteModalQuote, setDeleteModalQuote] = useState<Quote | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  useEffect(() => {
-    quotationsApi.getAll({ limit: 50 })
+  const fetchAndMergeQuotations = () => {
+    let localQuotes: Quote[] = [];
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_QUOTES_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) localQuotes = parsed;
+      }
+    } catch {}
+    if (localQuotes.length === 0) localQuotes = defaultSeedQuotes;
+
+    quotationsApi.getAll({ limit: 100 })
       .then((res) => {
-        setQuotes(res.data || []);
+        const apiList = res.data || [];
+        const map = new Map<string, Quote>();
+        localQuotes.forEach((q) => { if (q.id) map.set(q.id, q); });
+        apiList.forEach((q: any) => {
+          if (q.id) {
+            map.set(q.id, {
+              ...map.get(q.id),
+              ...q,
+              date: q.date || (map.get(q.id)?.date ?? getTodayStr()),
+            });
+          }
+        });
+        const merged = Array.from(map.values());
+        setQuotes(merged);
+        try {
+          localStorage.setItem(LOCAL_STORAGE_QUOTES_KEY, JSON.stringify(merged));
+        } catch {}
       })
       .catch((err) => {
-        console.warn("Could not fetch quotations from backend:", err);
+        console.warn("Could not fetch quotations from backend, using local:", err);
+        setQuotes(localQuotes);
       });
+  };
+
+  useEffect(() => {
+    fetchAndMergeQuotations();
+    const handleUpdated = () => fetchAndMergeQuotations();
+    window.addEventListener("garage_quotations_updated", handleUpdated);
+    return () => window.removeEventListener("garage_quotations_updated", handleUpdated);
   }, [refreshTrigger]);
+
+  useEffect(() => {
+    if (quotes.length > 0) {
+      try {
+        localStorage.setItem(LOCAL_STORAGE_QUOTES_KEY, JSON.stringify(quotes));
+      } catch {}
+    }
+  }, [quotes]);
 
   const filteredQuotes = useMemo(() => quotes.filter((quote) => {
     const matchesSearch = `${quote.id} ${quote.customer} ${quote.vehicle} ${quote.service} ${quote.detail}`.toLowerCase().includes(search.trim().toLowerCase());
     const matchesStatus = statusFilter === "All Status" || quote.status === statusFilter;
     const matchesAdvisor = advisorFilter === "All Service Advisors" || quote.advisor === advisorFilter;
-    return matchesSearch && matchesStatus && matchesAdvisor;
-  }), [advisorFilter, quotes, search, statusFilter]);
+    const matchesDate = matchesDateFilter(quote.date || (quote as any).createdAt, dateFilter);
+    return matchesSearch && matchesStatus && matchesAdvisor && matchesDate;
+  }), [advisorFilter, quotes, search, statusFilter, dateFilter]);
   const pageCount = Math.max(1, Math.ceil(filteredQuotes.length / 10));
   const currentPage = Math.min(page, pageCount);
   const pageQuotes = filteredQuotes.slice((currentPage - 1) * 10, currentPage * 10);
@@ -190,13 +310,26 @@ function Quotations({
         <section className="quote-list-card">
           <div className="quote-filters">
             <label className="quote-search"><Search size={16} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search by customer name, quote no., or vehicle..." aria-label="Search quotations" /></label>
-            <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }} aria-label="Filter by quotation status">
-              {["All Status", "Awaiting Approval", "Approved", "Draft", "Rejected", "Expired"].map((status) => <option key={status}>{status}</option>)}
-            </select>
-            <label className="quote-date-filter"><CalendarDays size={15} /><span>14 Apr 2025 - 14 May 2025</span></label>
-            <select value={advisorFilter} onChange={(event) => { setAdvisorFilter(event.target.value); setPage(1); }} aria-label="Filter by service advisor">
-              {["All Service Advisors", "Ali Hassan", "M. Khan"].map((advisor) => <option key={advisor}>{advisor}</option>)}
-            </select>
+            <CustomDropdown
+              value={statusFilter}
+              onChange={(val) => { setStatusFilter(val); setPage(1); }}
+              ariaLabel="Filter by quotation status"
+              options={[
+                { value: "All Status", label: "All Status" },
+                { value: "Awaiting Approval", label: "Awaiting Approval", badge: "Pending", badgeColor: "orange" },
+                { value: "Approved", label: "Approved", badge: "Accepted", badgeColor: "green" },
+                { value: "Draft", label: "Draft", badge: "Working", badgeColor: "blue" },
+                { value: "Rejected", label: "Rejected", badge: "Declined", badgeColor: "red" },
+                { value: "Expired", label: "Expired", badge: "Past Date", badgeColor: "red" },
+              ]}
+            />
+            <DateRangeFilter value={dateFilter} onChange={(df) => { setDateFilter(df); setPage(1); }} />
+            <CustomDropdown
+              value={advisorFilter}
+              onChange={(val) => { setAdvisorFilter(val); setPage(1); }}
+              ariaLabel="Filter by service advisor"
+              options={["All Service Advisors", "Ali Hassan", "M. Khan"]}
+            />
           </div>
           <div className="quote-table-scroll">
             <table className="quote-management-table">
@@ -275,10 +408,17 @@ function Quotations({
           <div className="printable-tax-invoice">
             {/* Quotation Slip Header */}
             <div className="tax-invoice-header">
-              <div className="tax-invoice-brand">
-                <h2>GARAGE WORKSPACE</h2>
-                <p>Auto Care &amp; Service Center · Doha, Qatar</p>
-                <p>Phone: +974 5555 1234 · C.R: 84920/1</p>
+              <div className="tax-invoice-brand" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <img
+                  src={`${import.meta.env.BASE_URL}Garage-crm-logo-light.png`}
+                  alt="Company Logo"
+                  style={{ height: "46px", width: "auto", objectFit: "contain" }}
+                />
+                <div>
+                  <h2>DOHA CENTRAL WORKSHOP</h2>
+                  <p>Auto Care &amp; Service Hub · Bays 01–12 · Doha, Qatar</p>
+                  <p>Phone: +974 5555 1234 · C.R: 84920/1</p>
+                </div>
               </div>
               <div className="tax-invoice-meta">
                 <span className="tax-invoice-badge" style={{ background: "#eff6ff", color: "#1d4ed8", borderColor: "#bfdbfe" }}>
@@ -310,9 +450,9 @@ function Quotations({
             <table className="tax-invoice-table">
               <thead>
                 <tr>
-                  <th style={{ textAlign: "left" }}>Description / Item</th>
-                  <th style={{ textAlign: "center", width: "55px" }}>Qty</th>
-                  <th style={{ textAlign: "right", width: "115px" }}>Amount (QAR)</th>
+                  <th style={{ textAlign: "left", width: "60%" }}>Description / Item</th>
+                  <th style={{ textAlign: "center", width: "15%" }}>Qty</th>
+                  <th style={{ textAlign: "right", width: "25%" }}>Amount (QAR)</th>
                 </tr>
               </thead>
               <tbody>

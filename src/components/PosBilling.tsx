@@ -1,7 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
+  AlertTriangle,
   Banknote,
   Box,
+  CalendarDays,
   CarFront,
   Check,
   CreditCard,
@@ -10,23 +12,27 @@ import {
   Landmark,
   Minus,
   Package,
+  PackageSearch,
   Phone,
   Plus,
   Printer,
+  Receipt,
+  RotateCcw,
   Save,
   Search,
   Settings,
   ShoppingCart,
   Trash2,
+  TrendingUp,
   User,
-  Users,
   Wrench,
   X,
   type LucideIcon,
 } from 'lucide-react';
 import { calculateTotals } from '../lib/billing';
-import { partsApi, transactionsApi } from '../lib/api';
+import { partsApi, transactionsApi, customersApi, invoicesApi } from '../lib/api';
 import { getNextInvoiceId, commitInvoiceId } from '../lib/sequence';
+import { CustomDropdown } from './CustomDropdown';
 
 export type Product = {
   id: string | number;
@@ -61,17 +67,27 @@ export type Invoice = {
   total: number;
   payment: string;
   date: string;
-  status: 'Paid' | 'Pending';
+  status: 'Paid' | 'Pending' | 'Returned' | 'Partially Returned';
 };
 
-const defaultServices: Product[] = [
-  { id: 'svc-1', name: 'Wheel Alignment', detail: '4 wheel computerized alignment', price: 200, type: 'Service', category: 'Services', stock: 9999, icon: Wrench, color: 'alignment' },
-  { id: 'svc-2', name: 'Full Polish & Wax', detail: 'Exterior buffing & interior detailing', price: 350, type: 'Service', category: 'Services', stock: 9999, icon: CarFront, color: 'polish' },
-  { id: 'svc-3', name: 'AC Gas & Cleaning', detail: 'R134a refrigerant refill & filter clean', price: 180, type: 'Service', category: 'Services', stock: 9999, icon: Wrench, color: 'ac' },
-  { id: 'svc-4', name: 'Tire Rotation & Balance', detail: '4 tires rotation & electronic balance', price: 80, type: 'Service', category: 'Services', stock: 9999, icon: Settings, color: 'tire' },
-  { id: 'svc-5', name: 'Car Wash & Sanitization', detail: 'High pressure foam wash & vacuum', price: 50, type: 'Service', category: 'Services', stock: 9999, icon: CarFront, color: 'wash' },
-  { id: 'svc-6', name: 'Computer OBD Diagnostics', detail: 'Full ECU & sensors fault code scan', price: 150, type: 'Service', category: 'Services', stock: 9999, icon: Settings, color: 'alignment' },
-];
+export type ReturnItem = {
+  productId: string | number;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  refund: number;
+};
+
+export type ReturnRecord = {
+  returnId: string;
+  invoiceId: string;
+  customer: string;
+  date: string;
+  items: ReturnItem[];
+  totalRefund: number;
+  reason: string;
+  notes?: string;
+};
 
 function getCategoryIcon(category: string): LucideIcon {
   const cat = (category || '').toLowerCase();
@@ -97,9 +113,6 @@ function getCategoryColor(category: string): string {
   return 'alignment';
 }
 
-const customers: Customer[] = [
-  { name: 'Walk-in Customer', phone: '', vehicle: '', plate: '' },
-];
 const sampleCart: CartItem[] = [];
 const number = (value: number) => value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const q = (value: number) => `QAR ${number(value)}`;
@@ -119,7 +132,7 @@ const validCart = (value: unknown): value is CartItem[] =>
 const validCustomer = (value: unknown): value is Customer =>
   !!value &&
   typeof value === 'object' &&
-  ['name', 'phone', 'vehicle', 'plate'].every(key => typeof (value as Record<string, unknown>)[key] === 'string');
+  typeof (value as Record<string, unknown>).name === 'string';
 
 function readInvoices(): Invoice[] {
   try {
@@ -134,10 +147,19 @@ function readInvoices(): Invoice[] {
           Number.isFinite(item.total) &&
           typeof item.date === 'string' &&
           typeof item.payment === 'string' &&
-          ['Paid', 'Pending'].includes(item.status)
+          ['Paid', 'Pending', 'Returned', 'Partially Returned'].includes(item.status)
       )
       ? value
       : [];
+  } catch {
+    return [];
+  }
+}
+
+function readReturns(): ReturnRecord[] {
+  try {
+    const val = JSON.parse(localStorage.getItem('garage-pos-returns') || '[]');
+    return Array.isArray(val) ? val : [];
   } catch {
     return [];
   }
@@ -147,32 +169,45 @@ export default function PosBilling({
   globalSearch,
   notify,
   refreshTrigger,
+  initialTab,
+  initialReturnInvoiceId,
 }: {
   globalSearch: string;
   notify: (message: string) => void;
   refreshTrigger?: number;
+  initialTab?: 'sale' | 'returns';
+  initialReturnInvoiceId?: string;
 }) {
+  const [viewTab, setViewTab] = useState<'sale' | 'returns'>(initialTab || 'sale');
   const [inventoryParts, setInventoryParts] = useState<any[]>([]);
+  const [registeredCustomers, setRegisteredCustomers] = useState<any[]>([]);
   const [isLoadingParts, setIsLoadingParts] = useState(true);
   const [cart, setCart] = useState<CartItem[]>(sampleCart);
-  const [customer, setCustomer] = useState<Customer>(customers[0]);
-  const [mode, setMode] = useState<'Service Sale' | 'Parts Sale' | 'Mixed Bill'>('Parts Sale');
+  const [customer, setCustomer] = useState<Customer>({ name: '', phone: '', vehicle: '', plate: '' });
   const [category, setCategory] = useState('All Items');
   const [search, setSearch] = useState('');
   const [payment, setPayment] = useState('Cash');
   const [received, setReceived] = useState('');
   const [workOrder, setWorkOrder] = useState('');
   const [invoices, setInvoices] = useState<Invoice[]>(readInvoices);
+  const [returns, setReturns] = useState<ReturnRecord[]>(readReturns);
   const [receipt, setReceipt] = useState<Invoice | null>(null);
+  const [activeReturnSlip, setActiveReturnSlip] = useState<ReturnRecord | null>(null);
+  const [printDoc, setPrintDoc] = useState<{ type: 'invoice'; data: Invoice } | { type: 'return'; data: ReturnRecord } | null>(null);
   const [showAll, setShowAll] = useState(false);
-  const [addingCustomer, setAddingCustomer] = useState(false);
-  const [extraCustomers, setExtraCustomers] = useState<Customer[]>([]);
+
+  // Return process state
+  const [selectedReturnInvoiceId, setSelectedReturnInvoiceId] = useState<string>('');
+  const [returnQuantities, setReturnQuantities] = useState<Record<string, number>>({});
+  const [returnReason, setReturnReason] = useState<string>('Defective / Damaged Part');
+  const [returnNotes, setReturnNotes] = useState<string>('');
+  const [restockToInventory, setRestockToInventory] = useState<boolean>(true);
 
   // Fetch actual parts from inventory database
   const loadInventory = () => {
     setIsLoadingParts(true);
     partsApi
-      .getAll({ limit: 200 })
+      .getAll({ limit: 1000 })
       .then((res) => {
         if (res.data && Array.isArray(res.data)) {
           setInventoryParts(res.data);
@@ -191,7 +226,22 @@ export default function PosBilling({
   }, [refreshTrigger]);
 
   useEffect(() => {
-    if (!receipt && !addingCustomer) return;
+    customersApi.getAll({ limit: 100 })
+      .then((res) => {
+        if (res.data && Array.isArray(res.data)) {
+          setRegisteredCustomers(res.data);
+        }
+      })
+      .catch(() => {});
+  }, [refreshTrigger]);
+
+  useEffect(() => {
+    if (initialTab) setViewTab(initialTab);
+    if (initialReturnInvoiceId) setSelectedReturnInvoiceId(initialReturnInvoiceId);
+  }, [initialTab, initialReturnInvoiceId]);
+
+  useEffect(() => {
+    if (!receipt && !activeReturnSlip) return;
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const dialog = document.querySelector<HTMLElement>('.pos-page [role="dialog"]');
     const previousOverflow = document.body.style.overflow;
@@ -200,7 +250,7 @@ export default function PosBilling({
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setReceipt(null);
-        setAddingCustomer(false);
+        setActiveReturnSlip(null);
       }
       if (event.key !== 'Tab') return;
       const controls = dialog?.querySelectorAll<HTMLElement>('button:not(:disabled), input, select, textarea');
@@ -221,11 +271,11 @@ export default function PosBilling({
       document.body.style.overflow = previousOverflow;
       previousFocus?.focus();
     };
-  }, [receipt, addingCustomer]);
+  }, [receipt, activeReturnSlip]);
 
-  // Combine inventory parts with services for POS Catalog
+  // POS is strictly for Parts Sale: only inventory parts
   const catalog: Product[] = useMemo(() => {
-    const partsProducts: Product[] = inventoryParts.map((part) => {
+    return inventoryParts.map((part) => {
       const stock = Number(part.quantity) || 0;
       const cat = part.category || 'Parts';
       return {
@@ -243,8 +293,6 @@ export default function PosBilling({
         color: getCategoryColor(cat),
       };
     });
-
-    return [...partsProducts, ...defaultServices];
   }, [inventoryParts]);
 
   const productFor = (item: CartItem): Product => {
@@ -252,7 +300,7 @@ export default function PosBilling({
     if (found) return found;
     return {
       id: item.productId,
-      name: 'Car Part / Service',
+      name: 'Inventory Part',
       detail: '—',
       price: 0,
       type: 'Part',
@@ -264,18 +312,23 @@ export default function PosBilling({
   };
 
   const categoryList = useMemo(() => {
-    const cats = new Set<string>();
-    cats.add('All Items');
-    if (mode === 'Service Sale' || mode === 'Mixed Bill') {
-      cats.add('Services');
-    }
-    if (mode === 'Parts Sale' || mode === 'Mixed Bill') {
-      inventoryParts.forEach((p) => {
-        if (p.category) cats.add(p.category);
-      });
-    }
-    return Array.from(cats);
-  }, [mode, inventoryParts]);
+    const map = new Map<string, string>();
+    map.set('all items', 'All Items');
+    inventoryParts.forEach((p) => {
+      const raw = (p.category || '').trim();
+      if (raw) {
+        const lower = raw.toLowerCase();
+        if (!map.has(lower)) {
+          const formatted = raw
+            .split(' ')
+            .map((w: string) => (w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : ''))
+            .join(' ');
+          map.set(lower, formatted);
+        }
+      }
+    });
+    return Array.from(map.values());
+  }, [inventoryParts]);
 
   const pricedItems = cart.map((item) => ({
     ...item,
@@ -287,13 +340,22 @@ export default function PosBilling({
   const change = Math.max(0, Math.round((receivedValue - totals.total) * 100) / 100);
   const invoiceId = getNextInvoiceId(invoices);
 
+  // Search-driven: items should only appear when user searches or picks a category
+  const isSearchActive = Boolean(
+    search.trim() ||
+    globalSearch.trim() ||
+    category !== 'All Items'
+  );
+
   const available = useMemo(() => {
+    if (!isSearchActive) {
+      return [];
+    }
+
     return catalog.filter((product) => {
-      const matchesMode =
-        mode === 'Mixed Bill' ||
-        product.type === (mode === 'Service Sale' ? 'Service' : 'Part');
       const matchesCategory =
-        category === 'All Items' || product.category === category;
+        category === 'All Items' ||
+        (product.category || '').toLowerCase() === category.toLowerCase();
       const fullSearch = `${search} ${globalSearch}`.trim().toLowerCase();
       const matchesSearch =
         !fullSearch ||
@@ -301,9 +363,9 @@ export default function PosBilling({
           .toLowerCase()
           .includes(fullSearch);
 
-      return matchesMode && matchesCategory && matchesSearch;
+      return matchesCategory && matchesSearch;
     });
-  }, [catalog, mode, category, search, globalSearch]);
+  }, [catalog, category, search, globalSearch, isSearchActive]);
 
   const add = (product: Product) => {
     if (product.type === 'Part') {
@@ -428,7 +490,38 @@ export default function PosBilling({
       })
     );
 
-    // Sync sale to backend (backend automatically deducts MongoDB inventory stock for 'Part' items)
+    // Save invoice to backend database as well
+    invoicesApi
+      .create({
+        invoiceId: invoiceId,
+        customer: customer.name || 'Direct Customer',
+        phone: customer.phone || '',
+        vehicle: customer.vehicle || 'Over The Counter',
+        plate: customer.plate || '-',
+        year: '2024',
+        service: 'Parts Sale (POS)',
+        detail: `${cart.length} inventory part(s) sold over-the-counter`,
+        amount: totals.subtotal,
+        discount: totals.discount,
+        vat: totals.tax,
+        total: totals.total,
+        status: 'Paid',
+        paymentMethod: payment === 'Card' ? 'Card' : payment === 'Bank Transfer' ? 'Bank Transfer' : 'Cash',
+        date: new Date().toLocaleDateString('en-GB'),
+        dueDate: new Date().toLocaleDateString('en-GB'),
+        items: cart.map((item) => {
+          const prod = productFor(item);
+          return {
+            name: prod.name,
+            quantity: item.quantity,
+            unitPrice: prod.price,
+          };
+        }),
+        type: 'Parts',
+      })
+      .catch((err) => console.warn('Backend invoice save error:', err));
+
+    // Sync sale to backend transactions (backend automatically deducts MongoDB inventory stock for 'Part' items)
     transactionsApi
       .create({
         transactionId: invoiceId,
@@ -460,9 +553,159 @@ export default function PosBilling({
     notify(`Invoice ${invoiceId} generated and inventory updated.`);
   };
 
+  // Calculation of today's figures for metrics
+  const todayPaidInvoices = useMemo(() => {
+    return invoices.filter((i) => i.status === 'Paid' || i.status === 'Partially Returned' || i.status === 'Returned');
+  }, [invoices]);
+
+  const todaySalesTotal = useMemo(() => {
+    return todayPaidInvoices.reduce((sum, i) => sum + (Number(i.total) || 0), 0);
+  }, [todayPaidInvoices]);
+
+  const todayReturnsTotal = useMemo(() => {
+    return returns.reduce((sum, r) => sum + (Number(r.totalRefund) || 0), 0);
+  }, [returns]);
+
+  const todayNetRevenue = Math.max(0, todaySalesTotal - todayReturnsTotal);
+
+  const todayItemsSold = useMemo(() => {
+    return todayPaidInvoices.reduce((sum, inv) => {
+      const soldInInv = inv.items.reduce((s, it) => s + it.quantity, 0);
+      return sum + soldInInv;
+    }, 0);
+  }, [todayPaidInvoices]);
+
+  // Selected return invoice details
+  const selectedReturnInvoice = useMemo(() => {
+    return invoices.find((inv) => inv.id === selectedReturnInvoiceId) || null;
+  }, [invoices, selectedReturnInvoiceId]);
+
+  // Helper to get return availability for an item
+  const getItemReturnInfo = (productId: string | number, originalQty: number) => {
+    const priorReturned = returns
+      .filter((r) => r.invoiceId === selectedReturnInvoiceId)
+      .flatMap((r) => r.items)
+      .filter((it) => String(it.productId) === String(productId))
+      .reduce((s, it) => s + it.quantity, 0);
+    const availableToReturn = Math.max(0, originalQty - priorReturned);
+    return { priorReturned, availableToReturn };
+  };
+
+  // Total refund calculation based on return quantities
+  const totalRefundAmount = useMemo(() => {
+    if (!selectedReturnInvoice) return 0;
+    return selectedReturnInvoice.items.reduce((sum, item) => {
+      const qty = returnQuantities[String(item.productId)] || 0;
+      const product = productFor(item);
+      return sum + qty * product.price;
+    }, 0);
+  }, [selectedReturnInvoice, returnQuantities, catalog]);
+
+  // Execute customer return & restock inventory
+  const handleProcessReturn = async () => {
+    if (!selectedReturnInvoice) {
+      notify('Select an invoice to return items from.');
+      return;
+    }
+    if (totalRefundAmount <= 0) {
+      notify('Please specify at least 1 item quantity to return.');
+      return;
+    }
+
+    const returnItems: ReturnItem[] = selectedReturnInvoice.items
+      .filter((it) => (returnQuantities[String(it.productId)] || 0) > 0)
+      .map((it) => {
+        const prod = productFor(it);
+        const qty = returnQuantities[String(it.productId)] || 0;
+        return {
+          productId: it.productId,
+          name: prod.name,
+          quantity: qty,
+          unitPrice: prod.price,
+          refund: qty * prod.price,
+        };
+      });
+
+    const returnId = `RET-${String(returns.length + 1).padStart(4, '0')}`;
+
+    // Restock parts to inventory
+    if (restockToInventory) {
+      for (const item of returnItems) {
+        try {
+          await partsApi.adjustStock(String(item.productId), {
+            type: 'Add',
+            quantity: item.quantity,
+            notes: `POS Return ${returnId} for ${selectedReturnInvoice.id}`,
+          });
+        } catch (e) {
+          console.warn('Restock error for part:', item.productId, e);
+        }
+      }
+      loadInventory();
+    }
+
+    const newReturn: ReturnRecord = {
+      returnId,
+      invoiceId: selectedReturnInvoice.id,
+      customer: selectedReturnInvoice.customer.name,
+      date: new Date().toLocaleString('en-GB', {
+        timeZone: 'Asia/Qatar',
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }),
+      items: returnItems,
+      totalRefund: totalRefundAmount,
+      reason: returnReason,
+      notes: returnNotes,
+    };
+
+    const updatedReturns = [newReturn, ...returns];
+    setReturns(updatedReturns);
+    try {
+      localStorage.setItem('garage-pos-returns', JSON.stringify(updatedReturns));
+    } catch {}
+
+    // Check if fully returned or partially returned
+    const allItemsFullyReturned = selectedReturnInvoice.items.every((it) => {
+      const prior = returns
+        .filter((r) => r.invoiceId === selectedReturnInvoice.id)
+        .flatMap((r) => r.items)
+        .filter((rit) => String(rit.productId) === String(it.productId))
+        .reduce((s, rit) => s + rit.quantity, 0);
+      const currentReturning = returnQuantities[String(it.productId)] || 0;
+      return prior + currentReturning >= it.quantity;
+    });
+
+    const newStatus = allItemsFullyReturned ? 'Returned' : 'Partially Returned';
+    const updatedInvoices = invoices.map((inv) =>
+      inv.id === selectedReturnInvoice.id ? { ...inv, status: newStatus as any } : inv
+    );
+    setInvoices(updatedInvoices);
+    try {
+      localStorage.setItem('garage-pos-invoices', JSON.stringify(updatedInvoices));
+    } catch {}
+
+    // Reset return quantities
+    setReturnQuantities({});
+    setReturnNotes('');
+    setActiveReturnSlip(newReturn);
+    notify(`Return ${returnId} processed: ${q(totalRefundAmount)} refunded & inventory restocked.`);
+  };
+
+  // High-fidelity print handler
+  const triggerPrint = (doc: { type: 'invoice'; data: Invoice } | { type: 'return'; data: ReturnRecord }) => {
+    setPrintDoc(doc);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'visible';
+    setTimeout(() => {
+      window.print();
+      document.body.style.overflow = prev;
+    }, 120);
+  };
+
   const exportInvoice = (invoice: Invoice) => {
     const text = [
-      'GARAGE WORKSPACE',
+      'GARAGE WORKSPACE - PARTS INVOICE',
       invoice.id,
       invoice.date,
       invoice.customer.name,
@@ -477,7 +720,7 @@ export default function PosBilling({
       '',
       `Grand total: ${q(invoice.total)}`,
       `Payment: ${invoice.payment}`,
-      'Frontend demonstration invoice',
+      'Parts sales tax receipt',
     ].join('\n');
     const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
     const link = document.createElement('a');
@@ -495,17 +738,17 @@ export default function PosBilling({
             <ShoppingCart size={37} />
           </span>
           <div>
-            <h1>POS Billing</h1>
-            <p>Create invoices for services and parts sales</p>
+            <h1>Parts POS &amp; Counter Sales</h1>
+            <p>Direct counter sales, instant parts billing &amp; sales returns</p>
           </div>
         </div>
         <div className="pos-metrics">
           {(
             [
-              [ShoppingCart, String(cart.length), 'Open Cart', cart.length ? `${cart.length} items in cart` : 'Cart is empty', 'orange'],
-              [FileText, String(invoices.length), 'Today Bills', invoices.length ? `${invoices.length} recorded` : 'No bills yet', 'blue'],
-              [Users, String(invoices.filter((i) => i.customer.name === 'Walk-in Customer').length), 'Walk-in Sales', 'From this session', 'green'],
-              [FileText, q(invoices.filter((i) => i.status === 'Pending').reduce((s, i) => s + i.total, 0)), 'Pending Payments', `${invoices.filter((i) => i.status === 'Pending').length} invoices`, 'orange'],
+              [CreditCard, q(todaySalesTotal), "Today's Parts Sales", `${todayPaidInvoices.length} invoices recorded`, 'orange'],
+              [RotateCcw, q(todayReturnsTotal), 'Returns & Refunds (Loss)', `${returns.length} returns processed`, 'red'],
+              [TrendingUp, q(todayNetRevenue), 'Net Parts Revenue', 'Sales minus returns', 'green'],
+              [Box, `${todayItemsSold} units`, 'Parts Sold Today', 'Dispatched from inventory', 'blue'],
             ] as [LucideIcon, string, string, string, string][]
           ).map(([Icon, value, label, detail, color]) => (
             <div className="pos-metric" key={label}>
@@ -522,107 +765,131 @@ export default function PosBilling({
         </div>
       </div>
 
-      <div className="pos-layout">
-        <div className="pos-left">
-          <section className="panel pos-catalog">
-            <div className="pos-customer-fields">
-              <label className="customer-field">
-                Customer <b>*</b>
-                <div>
-                  <User size={17} />
-                  <select
-                    aria-label="Customer"
-                    value={customer.name}
-                    onChange={(event) => {
-                      const selected = [...customers, ...extraCustomers].find((item) => item.name === event.target.value);
-                      if (selected) setCustomer(selected);
-                      else setCustomer({ name: 'Walk-in Customer', phone: '', vehicle: '', plate: '' });
-                    }}
-                  >
-                    <option>Walk-in Customer</option>
-                    {customer.name !== 'Walk-in Customer' &&
-                      ![...customers, ...extraCustomers].some((item) => item.name === customer.name) && (
-                        <option>{customer.name}</option>
-                      )}
-                    {[...customers, ...extraCustomers].map((item) => (
-                      <option key={item.name}>{item.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </label>
-              <label>
-                Phone
-                <div>
-                  <Phone size={16} />
-                  <input
-                    aria-label="Phone"
-                    value={customer.phone}
-                    onChange={(event) => setCustomer({ ...customer, phone: event.target.value })}
-                    placeholder="Phone number"
-                  />
-                </div>
-              </label>
-              <label className="vehicle-field">
-                Vehicle
-                <div>
-                  <CarFront size={17} />
-                  <input
-                    aria-label="Vehicle"
-                    value={customer.vehicle}
-                    onChange={(event) => setCustomer({ ...customer, vehicle: event.target.value })}
-                    placeholder="Vehicle / model"
-                  />
-                </div>
-              </label>
-              <label className="plate-field">
-                Plate No.
-                <div>
-                  <input
-                    aria-label="Plate number"
-                    value={customer.plate}
-                    onChange={(event) => setCustomer({ ...customer, plate: event.target.value })}
-                    placeholder="Plate"
-                  />
-                </div>
-              </label>
-              <label className="work-field">
-                Work Order <span>(Optional)</span>
-                <div>
-                  <Wrench size={15} />
-                  <select
-                    aria-label="Work order"
-                    value={workOrder}
-                    onChange={(event) => setWorkOrder(event.target.value)}
-                  >
-                    <option value="">None</option>
-                  </select>
-                </div>
-              </label>
-            </div>
+      {/* POS Top Navigation: Parts Sale vs Returns & Refunds */}
+      <div className="tabs" role="tablist" style={{ margin: '14px 0 16px' }}>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={viewTab === 'sale'}
+          className={viewTab === 'sale' ? 'active' : ''}
+          onClick={() => setViewTab('sale')}
+        >
+          <ShoppingCart size={15} />
+          <span>Parts Sale POS</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={viewTab === 'returns'}
+          className={viewTab === 'returns' ? 'active' : ''}
+          onClick={() => setViewTab('returns')}
+        >
+          <RotateCcw size={15} />
+          <span>Sales Returns &amp; Refunds</span>
+          {returns.length > 0 && <span className="badge ready" style={{ marginLeft: '6px', padding: '1px 6px', fontSize: '9px' }}>{returns.length}</span>}
+        </button>
+      </div>
 
-            <div className="sale-tabs" role="tablist" aria-label="Sale type">
-              {(
-                [
-                  [Wrench, 'Service Sale'],
-                  [Box, 'Parts Sale'],
-                  [ShoppingCart, 'Mixed Bill'],
-                ] as [LucideIcon, 'Service Sale' | 'Parts Sale' | 'Mixed Bill'][]
-              ).map(([Icon, label]) => (
-                <button
-                  role="tab"
-                  aria-selected={mode === label}
-                  className={mode === label ? 'active' : ''}
-                  key={label}
-                  onClick={() => {
-                    setMode(label);
-                    setCategory('All Items');
-                  }}
-                >
-                  <Icon size={16} />
-                  {label}
-                </button>
-              ))}
-            </div>
+      {viewTab === 'sale' ? (
+        <div className="pos-layout">
+          <div className="pos-left">
+            <section className="panel pos-catalog">
+              <div className="pos-customer-fields">
+                <label className="customer-field">
+                  Customer <b>*</b>
+                  <div>
+                    <User size={17} />
+                    <input
+                      aria-label="Customer Name"
+                      value={customer.name}
+                      onChange={(e) => setCustomer({ ...customer, name: e.target.value })}
+                      placeholder="Customer name (e.g. Counter Sale / Client)"
+                    />
+                    {registeredCustomers.length > 0 && (
+                      <select
+                        aria-label="Select existing customer"
+                        className="pos-quick-customer-select"
+                        value=""
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (!val) return;
+                          if (val === 'Direct Counter Sale') {
+                            setCustomer({ name: 'Direct Counter Sale', phone: '', vehicle: '', plate: '' });
+                            return;
+                          }
+                          const found = registeredCustomers.find(
+                            (c: any) => (c.id || c.name) === val || c.name === val
+                          );
+                          if (found) {
+                            setCustomer({
+                              name: found.name,
+                              phone: found.phone || '',
+                              vehicle: found.vehicles?.[0]?.model || found.vehicle || '',
+                              plate: found.vehicles?.[0]?.plate || found.plate || '',
+                            });
+                          }
+                        }}
+                      >
+                        <option value="">Quick Pick Existing...</option>
+                        <option value="Direct Counter Sale">Direct Counter Sale</option>
+                        {registeredCustomers.map((c: any) => (
+                          <option key={c.id || c.customerId || c.name} value={c.name}>
+                            {c.name} {c.phone ? `(${c.phone})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                </label>
+                <label>
+                  Phone
+                  <div>
+                    <Phone size={16} />
+                    <input
+                      aria-label="Phone"
+                      value={customer.phone}
+                      onChange={(event) => setCustomer({ ...customer, phone: event.target.value })}
+                      placeholder="Phone number"
+                    />
+                  </div>
+                </label>
+                <label className="vehicle-field">
+                  Vehicle
+                  <div>
+                    <CarFront size={17} />
+                    <input
+                      aria-label="Vehicle"
+                      value={customer.vehicle}
+                      onChange={(event) => setCustomer({ ...customer, vehicle: event.target.value })}
+                      placeholder="Vehicle / model"
+                    />
+                  </div>
+                </label>
+                <label className="plate-field">
+                  Plate No.
+                  <div>
+                    <input
+                      aria-label="Plate number"
+                      value={customer.plate}
+                      onChange={(event) => setCustomer({ ...customer, plate: event.target.value })}
+                      placeholder="Plate"
+                    />
+                  </div>
+                </label>
+                <label className="work-field">
+                  Work Order <span>(Optional)</span>
+                  <div>
+                    <Wrench size={15} />
+                    <select
+                      aria-label="Work order"
+                      value={workOrder}
+                      onChange={(event) => setWorkOrder(event.target.value)}
+                    >
+                      <option value="">None</option>
+                    </select>
+                  </div>
+                </label>
+              </div>
 
             <div className="catalog-toolbar">
               <div className="pos-search">
@@ -633,12 +900,30 @@ export default function PosBilling({
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                 />
+                {search && (
+                  <button
+                    type="button"
+                    aria-label="Clear search"
+                    onClick={() => setSearch('')}
+                    style={{
+                      border: 'none',
+                      background: 'none',
+                      color: '#94a3b8',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      padding: '2px',
+                    }}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
               </div>
               <div className="category-chips">
                 {categoryList.map((label) => (
                   <button
                     key={label}
-                    className={category === label ? 'active' : ''}
+                    className={category.toLowerCase() === label.toLowerCase() ? 'active' : ''}
                     onClick={() => setCategory(label)}
                   >
                     {label}
@@ -647,81 +932,142 @@ export default function PosBilling({
               </div>
             </div>
 
-            {/* Inventory Products Grid */}
-            <div className="product-grid">
-              {available.map((product) => {
-                const isOutOfStock = product.type === 'Part' && product.stock <= 0;
-                return (
+            {!isSearchActive ? (
+              <div className="pos-search-prompt">
+                <div className="pos-search-prompt-icon">
+                  <PackageSearch size={26} strokeWidth={2} />
+                </div>
+                <h3>Search to View &amp; Add Items</h3>
+                <p>
+                  Type a part name, OEM number, brand, or select a category above to find and add items.
+                </p>
+                <div className="pos-search-prompt-chips">
+                  <span>Quick Search:</span>
+                  {['Brakes', 'Filters', 'Engine Oil', 'Battery', 'Spark Plugs', 'Wiper Blades'].map((term) => (
+                    <button
+                      type="button"
+                      key={term}
+                      className="pos-prompt-chip"
+                      onClick={() => setSearch(term)}
+                    >
+                      <Search size={11} /> {term}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="pos-search-results-header">
+                  <span>
+                    Found <strong>{available.length}</strong> {available.length === 1 ? 'item' : 'items'}
+                    {search.trim() && <> matching &ldquo;<strong>{search.trim()}</strong>&rdquo;</>}
+                    {category !== 'All Items' && <> in &ldquo;<strong>{category}</strong>&rdquo;</>}
+                  </span>
                   <button
-                    className={`product-card ${isOutOfStock ? 'is-out-of-stock' : ''}`}
-                    key={String(product.id)}
+                    type="button"
+                    className="pos-clear-filter-btn"
                     onClick={() => {
-                      if (isOutOfStock) {
-                        notify(`"${product.name}" is Out of Stock in inventory and cannot be sold.`);
-                        return;
-                      }
-                      add(product);
-                    }}
-                    aria-label={`Add ${product.name}`}
-                    disabled={isOutOfStock}
-                    title={
-                      isOutOfStock
-                        ? `${product.name} is Out of Stock`
-                        : product.type === 'Part'
-                        ? `Available in inventory: ${product.stock}`
-                        : 'Service'
-                    }
-                    style={{
-                      opacity: isOutOfStock ? 0.6 : 1,
-                      cursor: isOutOfStock ? 'not-allowed' : 'pointer',
-                      borderColor: isOutOfStock ? '#fecaca' : undefined,
-                      background: isOutOfStock ? '#fff5f5' : undefined,
+                      setSearch('');
+                      setCategory('All Items');
                     }}
                   >
-                    <span className={`product-art ${product.color}`}>
-                      <product.icon size={34} strokeWidth={1.5} />
-                    </span>
-                    <span className="product-description">
-                      <strong>{product.name}</strong>
-                      <small>{product.detail}</small>
-                      <b>{q(product.price)}</b>
-                      {product.type === 'Part' && (
+                    <X size={12} /> Clear Filter
+                  </button>
+                </div>
+
+                {/* Inventory Products Grid */}
+                <div className="product-grid">
+                  {available.map((product) => {
+                    const isOutOfStock = product.type === 'Part' && product.stock <= 0;
+                    return (
+                      <button
+                        className={`product-card ${isOutOfStock ? 'is-out-of-stock' : ''}`}
+                        key={String(product.id)}
+                        onClick={() => {
+                          if (isOutOfStock) {
+                            notify(`"${product.name}" is Out of Stock in inventory and cannot be sold.`);
+                            return;
+                          }
+                          add(product);
+                        }}
+                        aria-label={`Add ${product.name}`}
+                        disabled={isOutOfStock}
+                        title={
+                          isOutOfStock
+                            ? `${product.name} is Out of Stock`
+                            : product.type === 'Part'
+                            ? `Available in inventory: ${product.stock}`
+                            : 'Service'
+                        }
+                        style={{
+                          opacity: isOutOfStock ? 0.6 : 1,
+                          cursor: isOutOfStock ? 'not-allowed' : 'pointer',
+                          borderColor: isOutOfStock ? '#fecaca' : undefined,
+                          background: isOutOfStock ? '#fff5f5' : undefined,
+                        }}
+                      >
+                        <span className={`product-art ${product.color}`}>
+                          <product.icon size={34} strokeWidth={1.5} />
+                        </span>
+                        <span className="product-description">
+                          <strong>{product.name}</strong>
+                          <small>{product.detail}</small>
+                          <b>{q(product.price)}</b>
+                          {product.type === 'Part' && (
+                            <span
+                              style={{
+                                display: 'inline-block',
+                                marginTop: '3px',
+                                fontSize: '9px',
+                                fontWeight: 700,
+                                padding: '1px 7px',
+                                borderRadius: '10px',
+                                background: isOutOfStock ? '#fee2e2' : product.stock <= 5 ? '#fef3c7' : '#ecfdf5',
+                                color: isOutOfStock ? '#dc2626' : product.stock <= 5 ? '#d97706' : '#059669',
+                              }}
+                            >
+                              {isOutOfStock ? 'Out of Stock (0)' : `${product.stock} in stock`}
+                            </span>
+                          )}
+                        </span>
                         <span
+                          className="add-product"
                           style={{
-                            display: 'inline-block',
-                            marginTop: '3px',
-                            fontSize: '9px',
-                            fontWeight: 700,
-                            padding: '1px 7px',
-                            borderRadius: '10px',
-                            background: isOutOfStock ? '#fee2e2' : product.stock <= 5 ? '#fef3c7' : '#ecfdf5',
-                            color: isOutOfStock ? '#dc2626' : product.stock <= 5 ? '#d97706' : '#059669',
+                            background: isOutOfStock ? '#fee2e2' : undefined,
+                            color: isOutOfStock ? '#dc2626' : undefined,
                           }}
                         >
-                          {isOutOfStock ? 'Out of Stock (0)' : `${product.stock} in stock`}
+                          {isOutOfStock ? <X size={15} /> : <Plus size={17} />}
                         </span>
-                      )}
-                    </span>
-                    <span
-                      className="add-product"
-                      style={{
-                        background: isOutOfStock ? '#fee2e2' : undefined,
-                        color: isOutOfStock ? '#dc2626' : undefined,
-                      }}
-                    >
-                      {isOutOfStock ? <X size={15} /> : <Plus size={17} />}
-                    </span>
-                  </button>
-                );
-              })}
-              {available.length === 0 && (
-                <div className="catalog-empty">
-                  {isLoadingParts
-                    ? 'Loading parts from inventory...'
-                    : 'No matching items in inventory. Try another category or search.'}
+                      </button>
+                    );
+                  })}
+                  {available.length === 0 && (
+                    <div className="catalog-empty">
+                      <PackageSearch size={32} style={{ color: '#ff631c', margin: '0 auto 8px' }} />
+                      <strong style={{ display: 'block', fontSize: '13px', color: '#1e293b' }}>
+                        No Matching Items Found
+                      </strong>
+                      <p style={{ margin: '4px 0 12px', fontSize: '11px', color: '#64748b' }}>
+                        {isLoadingParts
+                          ? 'Loading parts from inventory...'
+                          : `No inventory parts match "${search || category}". Check spelling or try another keyword.`}
+                      </p>
+                      <button
+                        type="button"
+                        className="pos-clear-filter-btn"
+                        onClick={() => {
+                          setSearch('');
+                          setCategory('All Items');
+                        }}
+                      >
+                        <X size={12} /> Reset Search
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </>
+            )}
           </section>
 
           {/* Cart Section */}
@@ -1025,68 +1371,259 @@ export default function PosBilling({
           <small className="pos-demo-note">Frontend demo · invoices and drafts stay on this device</small>
         </aside>
       </div>
-
-      {addingCustomer && (
-        <div className="modal-backdrop" onClick={() => setAddingCustomer(false)}>
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-label="Add customer"
-            className="modal"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="modal-heading">
-              <h2>Add Customer</h2>
-              <button className="icon-button" aria-label="Close" onClick={() => setAddingCustomer(false)}>
-                <X />
-              </button>
+      ) : (
+        /* SALES RETURNS & REFUNDS VIEW */
+        <div className="pos-bottom-grid" style={{ gridTemplateColumns: 'minmax(0, 1.35fr) minmax(360px, 1fr)', gap: '14px', alignItems: 'start' }}>
+          <section className="panel" style={{ padding: '16px' }}>
+            <div className="panel-title">
+              <div>
+                <RotateCcw size={18} />
+                <h2>Process Parts Return &amp; Customer Refund</h2>
+              </div>
             </div>
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                const data = new FormData(event.currentTarget);
-                const entry = {
-                  name: String(data.get('name')).trim(),
-                  phone: String(data.get('phone')).trim(),
-                  vehicle: String(data.get('vehicle')).trim(),
-                  plate: String(data.get('plate')).trim(),
-                };
-                if (!entry.name) return;
-                if ([...customers, ...extraCustomers].some((item) => item.name === entry.name)) {
-                  notify('A customer with that name already exists. Select them from the customer list.');
-                  return;
-                }
-                setExtraCustomers((current) => [...current, entry]);
-                setCustomer(entry);
-                setAddingCustomer(false);
-                notify('Customer added to this session.');
-              }}
-            >
+
+            <div className="pos-customer-fields" style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '14px', padding: '0 0 14px' }}>
               <label>
-                Name
-                <input name="name" required autoFocus />
+                Select Invoice to Return *
+                <CustomDropdown
+                  value={selectedReturnInvoiceId}
+                  onChange={(val) => {
+                    setSelectedReturnInvoiceId(val);
+                    setReturnQuantities({});
+                  }}
+                  icon={FileText}
+                  placeholder={`-- Choose Paid Invoice (${invoices.length} available) --`}
+                  options={[
+                    { value: '', label: `-- Choose Paid Invoice (${invoices.length} available) --` },
+                    ...invoices.map((inv) => ({
+                      value: inv.id,
+                      label: `${inv.id} — ${inv.customer.name || 'Direct Customer'}`,
+                      detail: `${inv.date} · Paid`,
+                      badge: q(inv.total),
+                      badgeColor: 'orange' as const,
+                    })),
+                  ]}
+                />
               </label>
+
               <label>
-                Phone
-                <input name="phone" type="tel" required />
+                Reason for Return *
+                <CustomDropdown
+                  value={returnReason}
+                  onChange={(val) => setReturnReason(val)}
+                  icon={AlertTriangle}
+                  options={[
+                    { value: 'Defective / Damaged Part', label: 'Defective / Damaged Part', detail: 'Part failed quality check' },
+                    { value: 'Wrong Part Supplied', label: 'Wrong Part Supplied', detail: 'Mismatch with customer order' },
+                    { value: 'Customer Changed Mind / Unneeded', label: 'Customer Changed Mind / Unneeded', detail: 'Customer return' },
+                    { value: 'Fitting Issue / Incompatible', label: 'Fitting Issue / Incompatible', detail: 'Does not fit vehicle' },
+                    { value: 'Warranty Claim', label: 'Warranty Claim', detail: 'Manufacturer warranty' },
+                    { value: 'Other', label: 'Other', detail: 'Special remarks in notes' },
+                  ]}
+                />
               </label>
-              <label>
-                Vehicle
-                <input name="vehicle" />
-              </label>
-              <label>
-                Plate No.
-                <input name="plate" />
-              </label>
-              <button className="primary-button" type="submit">
-                <Plus size={17} />
-                Add Customer
-              </button>
-            </form>
+            </div>
+
+            {selectedReturnInvoice ? (
+              <div>
+                <div className="customer-summary" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px', marginBottom: '14px', padding: '10px 12px' }}>
+                  <div><User size={14} /><span>Customer: <strong>{selectedReturnInvoice.customer.name || 'Direct Customer'}</strong></span></div>
+                  <div><Phone size={14} /><span>Phone: <strong>{selectedReturnInvoice.customer.phone || '—'}</strong></span></div>
+                  <div><CalendarDays size={14} /><span>Date: <strong>{selectedReturnInvoice.date}</strong></span></div>
+                  <div><Banknote size={14} /><span>Paid: <strong>{q(selectedReturnInvoice.total)}</strong></span></div>
+                </div>
+
+                <div className="table-scroll" style={{ marginBottom: '14px' }}>
+                  <table className="invoice-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Part Name</th>
+                        <th style={{ textAlign: 'center' }}>Sold</th>
+                        <th style={{ textAlign: 'center' }}>Returned</th>
+                        <th style={{ textAlign: 'center' }}>Available</th>
+                        <th style={{ textAlign: 'center', width: '110px' }}>Return Qty</th>
+                        <th style={{ textAlign: 'right' }}>Price</th>
+                        <th style={{ textAlign: 'right' }}>Refund Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedReturnInvoice.items.map((item, idx) => {
+                        const prod = productFor(item);
+                        const { priorReturned, availableToReturn } = getItemReturnInfo(item.productId, item.quantity);
+                        const curReturnQty = returnQuantities[String(item.productId)] || 0;
+                        const lineRefund = curReturnQty * prod.price;
+
+                        return (
+                          <tr key={String(item.productId)}>
+                            <td>{idx + 1}</td>
+                            <td>
+                              <strong>{prod.name}</strong>
+                              <small style={{ display: 'block', color: '#6b7c96' }}>{prod.detail}</small>
+                            </td>
+                            <td style={{ textAlign: 'center' }}>{item.quantity}</td>
+                            <td style={{ textAlign: 'center', color: '#8a99b1' }}>{priorReturned}</td>
+                            <td style={{ textAlign: 'center' }}>
+                              <span className={`badge ${availableToReturn > 0 ? 'ready' : 'pending'}`}>
+                                {availableToReturn}
+                              </span>
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <div className="quantity-control" style={{ margin: 'auto' }}>
+                                <button
+                                  type="button"
+                                  disabled={curReturnQty <= 0}
+                                  onClick={() =>
+                                    setReturnQuantities((prev) => ({
+                                      ...prev,
+                                      [String(item.productId)]: Math.max(0, curReturnQty - 1),
+                                    }))
+                                  }
+                                >
+                                  -
+                                </button>
+                                <span>{curReturnQty}</span>
+                                <button
+                                  type="button"
+                                  disabled={curReturnQty >= availableToReturn}
+                                  onClick={() =>
+                                    setReturnQuantities((prev) => ({
+                                      ...prev,
+                                      [String(item.productId)]: Math.min(availableToReturn, curReturnQty + 1),
+                                    }))
+                                  }
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </td>
+                            <td style={{ textAlign: 'right' }}>{number(prod.price)}</td>
+                            <td style={{ textAlign: 'right', fontWeight: 700, color: lineRefund > 0 ? '#ff301e' : '#17223a' }}>
+                              {q(lineRefund)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', fontWeight: 600, color: '#253857', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={restockToInventory}
+                      onChange={(e) => setRestockToInventory(e.target.checked)}
+                      style={{ width: '16px', height: '16px', accentColor: '#ff6218' }}
+                    />
+                    <span>Automatically restore returned items back to warehouse inventory stock</span>
+                  </label>
+
+                  <div className="pos-customer-fields" style={{ display: 'grid', gridTemplateColumns: '1fr', padding: '0 0 4px' }}>
+                    <label style={{ width: '100%' }}>
+                      Optional Return Notes
+                      <div>
+                        <input
+                          placeholder="Add optional notes or remarks for this return..."
+                          value={returnNotes}
+                          onChange={(e) => setReturnNotes(e.target.value)}
+                        />
+                      </div>
+                    </label>
+                  </div>
+
+                  <div className="grand-total" style={{ marginTop: '4px' }}>
+                    <span>Total Refund Payable</span>
+                    <strong style={{ color: totalRefundAmount > 0 ? '#ff301e' : '#17223a' }}>{q(totalRefundAmount)}</strong>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="generate-invoice"
+                    style={{ marginTop: '4px' }}
+                    disabled={totalRefundAmount <= 0}
+                    onClick={handleProcessReturn}
+                  >
+                    <RotateCcw size={16} />
+                    Process Return &amp; Refund Customer
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="empty-state" style={{ padding: '36px 12px' }}>
+                <RotateCcw size={32} />
+                <p>Select a paid invoice from the dropdown above to begin processing a return and restock parts.</p>
+              </div>
+            )}
+          </section>
+
+          {/* Recent Returns History */}
+          <section className="panel recent-invoices" style={{ padding: '16px' }}>
+            <div className="panel-title">
+              <div>
+                <Receipt size={18} />
+                <h2>Recent Parts Returns &amp; Credit Notes ({returns.length})</h2>
+              </div>
+            </div>
+
+            {returns.length === 0 ? (
+              <div className="empty-state" style={{ padding: '36px 12px' }}>
+                <Receipt size={32} />
+                <p>No returns recorded yet. All sales are intact.</p>
+              </div>
+            ) : (
+              <div className="table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Return Slip</th>
+                      <th>Invoice No.</th>
+                      <th>Date</th>
+                      <th>Customer</th>
+                      <th>Items</th>
+                      <th>Reason</th>
+                      <th style={{ textAlign: 'right' }}>Refund</th>
+                      <th style={{ textAlign: 'center' }}>Slip</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {returns.map((ret) => (
+                      <tr key={ret.returnId}>
+                        <td><strong>{ret.returnId}</strong></td>
+                        <td><span className="order-id">{ret.invoiceId}</span></td>
+                        <td className="muted">{ret.date}</td>
+                        <td>{ret.customer}</td>
+                        <td>{ret.items.length} item(s)</td>
+                        <td><span className="badge pending">{ret.reason}</span></td>
+                        <td style={{ textAlign: 'right', fontWeight: 700, color: '#ff301e' }}>
+                          -{q(ret.totalRefund)}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <button
+                            type="button"
+                            className="crm-table-view-btn"
+                            style={{ padding: '3px 8px', fontSize: '10px' }}
+                            onClick={() => {
+                              setActiveReturnSlip(ret);
+                              triggerPrint({ type: 'return', data: ret });
+                            }}
+                            title="Reprint Credit Note"
+                          >
+                            <Printer size={12} />
+                            <span>Slip</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
         </div>
       )}
 
+      {/* Invoice Details Modal */}
       {receipt && (
         <div className="modal-backdrop receipt-backdrop" onClick={() => setReceipt(null)}>
           <section
@@ -1097,55 +1634,345 @@ export default function PosBilling({
             onClick={(event) => event.stopPropagation()}
           >
             <div className="modal-heading">
-              <h2>Invoice {receipt.id}</h2>
+              <h2>Parts Invoice {receipt.id}</h2>
               <button className="icon-button" aria-label="Close invoice" onClick={() => setReceipt(null)}>
                 <X />
               </button>
             </div>
-            <div className="receipt-brand">
-              <img src={`${import.meta.env.BASE_URL}Garage-crm-logo-light.png`} alt="Garage CRM" />
+            <div className="receipt-brand-clean">
+              <img src={`${import.meta.env.BASE_URL}Garage-crm-logo.png`} alt="Garage CRM" />
+              <div>
+                <h3>DOHA CENTRAL GARAGE</h3>
+                <p>Parts &amp; Auto Accessories Hub · Doha, Qatar</p>
+              </div>
             </div>
             <p className="receipt-state">
               <Check size={17} />
               {receipt.status}
             </p>
-            <p>{receipt.date} · Qatar time</p>
-            <strong>{receipt.customer.name}</strong>
-            <p>
-              {receipt.customer.vehicle} · {receipt.customer.plate}
-            </p>
-            {receipt.items.map((item) => (
-              <div className="receipt-line" key={String(item.productId)}>
-                <span>
-                  {productFor(item).name} × {item.quantity}
-                </span>
-                <strong>
-                  {q(
-                    calculateTotals([
-                      { ...item, price: productFor(item).price, type: productFor(item).type },
-                    ]).total
-                  )}
-                </strong>
-              </div>
-            ))}
-            {!receipt.items.length && <p className="muted">Sample invoice. Line item details are unavailable.</p>}
+            <p className="receipt-meta-line">{receipt.date} · Qatar time</p>
+            <div className="receipt-cust-box">
+              <strong>{receipt.customer.name || 'Direct Customer'}</strong>
+              <p>
+                {receipt.customer.phone ? `Tel: ${receipt.customer.phone}` : 'Counter Sale'}
+                {receipt.customer.vehicle ? ` · ${receipt.customer.vehicle} (${receipt.customer.plate})` : ''}
+              </p>
+            </div>
+
+            <div className="receipt-items-list">
+              {receipt.items.map((item) => {
+                const prod = productFor(item);
+                const lineTotal = prod.price * item.quantity;
+                return (
+                  <div className="receipt-line" key={String(item.productId)}>
+                    <div>
+                      <span>{prod.name} × {item.quantity}</span>
+                      <small style={{ display: 'block', color: '#64748b', fontSize: '10px' }}>{prod.detail}</small>
+                    </div>
+                    <strong>{q(lineTotal)}</strong>
+                  </div>
+                );
+              })}
+            </div>
+
+            {!receipt.items.length && <p className="muted">Line item details are unavailable.</p>}
             <div className="grand-total">
-              <strong>Total</strong>
+              <strong>Total (Incl. VAT)</strong>
               <strong>{q(receipt.total)}</strong>
             </div>
-            <p>Payment: {receipt.payment}</p>
-            <small className="muted">Frontend demonstration invoice</small>
+            <p style={{ marginTop: '8px', fontSize: '12px', color: '#64748b' }}>
+              Payment Mode: <strong>{receipt.payment}</strong>
+            </p>
+
             <div className="receipt-actions">
-              <button className="primary-button" onClick={() => window.print()}>
+              <button className="primary-button" onClick={() => triggerPrint({ type: 'invoice', data: receipt })}>
                 <Printer size={17} />
-                Print
+                Print Invoice
               </button>
               <button className="subtle-button" onClick={() => exportInvoice(receipt)}>
                 <Download size={17} />
-                Download
+                Download Text
               </button>
             </div>
           </section>
+        </div>
+      )}
+
+      {/* Credit Note / Return Modal */}
+      {activeReturnSlip && (
+        <div className="modal-backdrop receipt-backdrop" onClick={() => setActiveReturnSlip(null)}>
+          <section
+            className="modal receipt"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Credit Note ${activeReturnSlip.returnId}`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-heading">
+              <h2>Credit Note {activeReturnSlip.returnId}</h2>
+              <button className="icon-button" aria-label="Close" onClick={() => setActiveReturnSlip(null)}>
+                <X />
+              </button>
+            </div>
+            <div className="receipt-brand-clean">
+              <img src={`${import.meta.env.BASE_URL}Garage-crm-logo.png`} alt="Garage CRM" />
+              <div>
+                <h3 style={{ color: '#dc2626' }}>PARTS RETURN VOUCHER</h3>
+                <p>Credit Note · Doha Central Workshop</p>
+              </div>
+            </div>
+            <p className="receipt-state" style={{ color: '#dc2626' }}>
+              <RotateCcw size={17} />
+              Return Processed &amp; Inventory Restocked
+            </p>
+            <p className="receipt-meta-line">{activeReturnSlip.date} · Qatar time</p>
+            <div className="receipt-cust-box">
+              <strong>{activeReturnSlip.customer}</strong>
+              <p>Original Invoice: #{activeReturnSlip.invoiceId} · Reason: {activeReturnSlip.reason}</p>
+            </div>
+
+            <div className="receipt-items-list">
+              {activeReturnSlip.items.map((item, idx) => (
+                <div className="receipt-line" key={idx}>
+                  <span>{item.name} × {item.quantity}</span>
+                  <strong style={{ color: '#dc2626' }}>- {q(item.refund)}</strong>
+                </div>
+              ))}
+            </div>
+
+            <div className="grand-total" style={{ background: '#fef2f2', borderColor: '#fecaca' }}>
+              <strong style={{ color: '#dc2626' }}>Total Refund Paid</strong>
+              <strong style={{ color: '#dc2626' }}>{q(activeReturnSlip.totalRefund)}</strong>
+            </div>
+
+            <div className="receipt-actions">
+              <button className="primary-button" onClick={() => triggerPrint({ type: 'return', data: activeReturnSlip })}>
+                <Printer size={17} />
+                Print Return Slip
+              </button>
+              <button className="subtle-button" onClick={() => setActiveReturnSlip(null)}>
+                Close
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* Direct Clean Print Document (Hidden on screen, 100% visible and formatted in Print) */}
+      {printDoc && (
+        <div id="pos-printable-receipt" className="pos-printable-receipt">
+          {printDoc.type === 'invoice' ? (
+            <div className="pos-print-document">
+              <div className="pos-print-header">
+                <div className="pos-print-brand">
+                  <img src={`${import.meta.env.BASE_URL}Garage-crm-logo.png`} alt="Garage Logo" />
+                  <div>
+                    <h2>DOHA CENTRAL GARAGE &amp; AUTO PARTS</h2>
+                    <p>Industrial Area, Street 15, Doha - Qatar | Tel: +974 4455 6677</p>
+                    <p>Tax Reg. (TRN): QTR-VAT-9021884 | Commercial Reg: 10293847</p>
+                  </div>
+                </div>
+                <div className="pos-print-badge-box">
+                  <h1>PARTS TAX INVOICE</h1>
+                  <span className="badge-paid-print">ORIGINAL RECEIPT (PAID)</span>
+                </div>
+              </div>
+
+              <div className="pos-print-meta-grid">
+                <div>
+                  <span>Invoice No:</span>
+                  <strong>{printDoc.data.id}</strong>
+                </div>
+                <div>
+                  <span>Date &amp; Time:</span>
+                  <strong>{printDoc.data.date}</strong>
+                </div>
+                <div>
+                  <span>Customer Name:</span>
+                  <strong>{printDoc.data.customer.name || 'Direct Customer'}</strong>
+                </div>
+                <div>
+                  <span>Phone Number:</span>
+                  <strong>{printDoc.data.customer.phone || 'N/A'}</strong>
+                </div>
+                <div>
+                  <span>Vehicle / Plate:</span>
+                  <strong>
+                    {printDoc.data.customer.vehicle
+                      ? `${printDoc.data.customer.vehicle} (${printDoc.data.customer.plate})`
+                      : 'Over The Counter'}
+                  </strong>
+                </div>
+                <div>
+                  <span>Payment Mode:</span>
+                  <strong>{printDoc.data.payment} (Settled)</strong>
+                </div>
+              </div>
+
+              <table className="pos-print-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '35px' }}>#</th>
+                    <th>Part Name &amp; Description</th>
+                    <th style={{ width: '65px', textAlign: 'center' }}>Qty</th>
+                    <th style={{ width: '110px', textAlign: 'right' }}>Unit Price (QAR)</th>
+                    <th style={{ width: '120px', textAlign: 'right' }}>Line Total (QAR)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {printDoc.data.items.map((item, idx) => {
+                    const prod = productFor(item);
+                    const lineTotal = prod.price * item.quantity;
+                    return (
+                      <tr key={idx}>
+                        <td>{idx + 1}</td>
+                        <td>
+                          <strong>{prod.name}</strong>
+                          <span style={{ display: 'block', fontSize: '10px', color: '#64748b' }}>
+                            {prod.detail}
+                          </span>
+                        </td>
+                        <td style={{ textAlign: 'center' }}>{item.quantity}</td>
+                        <td style={{ textAlign: 'right' }}>{number(prod.price)}</td>
+                        <td style={{ textAlign: 'right' }}>{number(lineTotal)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+
+              <div className="pos-print-summary-grid">
+                <div className="pos-print-terms">
+                  <strong>Return &amp; Warranty Terms:</strong>
+                  <ul>
+                    <li>Parts return / exchange accepted within 7 days with this original receipt.</li>
+                    <li>Items must be undamaged, uninstalled, in original factory packaging.</li>
+                    <li>Electrical &amp; electronic components are non-returnable once fitted.</li>
+                  </ul>
+                </div>
+                <div className="pos-print-totals">
+                  <div className="pos-print-row">
+                    <span>Subtotal:</span>
+                    <strong>{q(printDoc.data.total / 1.05)}</strong>
+                  </div>
+                  <div className="pos-print-row">
+                    <span>VAT (5%):</span>
+                    <strong>{q(printDoc.data.total - printDoc.data.total / 1.05)}</strong>
+                  </div>
+                  <div className="pos-print-row grand">
+                    <span>Net Grand Total:</span>
+                    <strong>{q(printDoc.data.total)}</strong>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pos-print-signatures">
+                <div>
+                  <div className="sign-box-line" />
+                  <p>Customer Signature</p>
+                </div>
+                <div>
+                  <div className="sign-box-line" />
+                  <p>Authorized Cashier / Workshop Stamp</p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="pos-print-document return-document">
+              <div className="pos-print-header">
+                <div className="pos-print-brand">
+                  <img src={`${import.meta.env.BASE_URL}Garage-crm-logo.png`} alt="Garage Logo" />
+                  <div>
+                    <h2>DOHA CENTRAL GARAGE &amp; AUTO PARTS</h2>
+                    <p>Industrial Area, Street 15, Doha - Qatar | Tel: +974 4455 6677</p>
+                    <p>Tax Reg. (TRN): QTR-VAT-9021884 | Commercial Reg: 10293847</p>
+                  </div>
+                </div>
+                <div className="pos-print-badge-box">
+                  <h1 style={{ color: '#dc2626' }}>CREDIT NOTE / RETURN</h1>
+                  <span className="badge-paid-print" style={{ background: '#fee2e2', color: '#dc2626' }}>
+                    REFUND ISSUED
+                  </span>
+                </div>
+              </div>
+
+              <div className="pos-print-meta-grid">
+                <div>
+                  <span>Return Slip No:</span>
+                  <strong>{printDoc.data.returnId}</strong>
+                </div>
+                <div>
+                  <span>Original Invoice:</span>
+                  <strong>{printDoc.data.invoiceId}</strong>
+                </div>
+                <div>
+                  <span>Return Date:</span>
+                  <strong>{printDoc.data.date}</strong>
+                </div>
+                <div>
+                  <span>Customer Name:</span>
+                  <strong>{printDoc.data.customer}</strong>
+                </div>
+                <div>
+                  <span>Return Reason:</span>
+                  <strong>{printDoc.data.reason}</strong>
+                </div>
+                <div>
+                  <span>Total Refund:</span>
+                  <strong style={{ color: '#dc2626' }}>{q(printDoc.data.totalRefund)}</strong>
+                </div>
+              </div>
+
+              <table className="pos-print-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '35px' }}>#</th>
+                    <th>Returned Part Description</th>
+                    <th style={{ width: '65px', textAlign: 'center' }}>Qty</th>
+                    <th style={{ width: '110px', textAlign: 'right' }}>Unit Price (QAR)</th>
+                    <th style={{ width: '120px', textAlign: 'right' }}>Refund (QAR)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {printDoc.data.items.map((item, idx) => (
+                    <tr key={idx}>
+                      <td>{idx + 1}</td>
+                      <td><strong>{item.name}</strong></td>
+                      <td style={{ textAlign: 'center' }}>{item.quantity}</td>
+                      <td style={{ textAlign: 'right' }}>{number(item.unitPrice)}</td>
+                      <td style={{ textAlign: 'right', color: '#dc2626', fontWeight: 700 }}>
+                        {number(item.refund)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <div className="pos-print-summary-grid">
+                <div className="pos-print-terms">
+                  <p>Returned items have been inspected and restocked back into inventory.</p>
+                  <p>Cash/Card refund has been successfully settled with customer.</p>
+                </div>
+                <div className="pos-print-totals">
+                  <div className="pos-print-row grand" style={{ color: '#dc2626' }}>
+                    <span>Total Refund Settled:</span>
+                    <strong style={{ color: '#dc2626' }}>{q(printDoc.data.totalRefund)}</strong>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pos-print-signatures">
+                <div>
+                  <div className="sign-box-line" />
+                  <p>Customer Signature (Received Refund)</p>
+                </div>
+                <div>
+                  <div className="sign-box-line" />
+                  <p>Authorized Cashier / Manager</p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </main>

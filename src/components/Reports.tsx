@@ -114,12 +114,13 @@ function Reports({ notify }: { notify: (message: string) => void }) {
     const invoices = liveInvoices.length;
     return { revenue: totalRev, workOrders: totalOrders, invoices, averageInvoice: invoices ? totalRev / invoices : 0 };
   }, [liveInvoices, totalOrders]);
-  const maxRevenue = Math.ceil(Math.max(...series.map((point) => point.revenue)) / 1000) * 1000;
+  const calculatedMax = Math.max(...series.map((point) => point.revenue), 0);
+  const maxRevenue = calculatedMax > 0 ? Math.ceil(calculatedMax / 1000) * 1000 : 1000;
   const chartWidth = Math.max(440, series.length * 74);
   const chartHeight = 196;
   const points = series.map((point, index) => ({
     x: series.length === 1 ? chartWidth / 2 : 82 + (index * (chartWidth - 96)) / (series.length - 1),
-    y: chartHeight - 18 - (point.revenue / maxRevenue) * (chartHeight - 36),
+    y: Number.isFinite(chartHeight - 18 - (point.revenue / maxRevenue) * (chartHeight - 36)) ? chartHeight - 18 - (point.revenue / maxRevenue) * (chartHeight - 36) : chartHeight - 18,
   }));
   const revenuePath = points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
 

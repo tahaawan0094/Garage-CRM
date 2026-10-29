@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { vehiclesApi } from "../lib/api";
 import ViewInfoModal, { type ViewInfoTarget } from "./ViewInfoModal";
+import { CustomDropdown } from "./CustomDropdown";
+import { DateRangeFilter, type DateFilterValue, matchesDateFilter } from "./DateRangeFilter";
 import {
   Activity,
   CalendarDays,
@@ -53,6 +55,7 @@ function Vehicles(props: { notify: (message: string) => void; onAdd?: () => void
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All Status");
   const [typeFilter, setTypeFilter] = useState("All Vehicle Types");
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>({ type: 'today' });
   const [page, setPage] = useState(1);
   const [viewInfoTarget, setViewInfoTarget] = useState<ViewInfoTarget | null>(null);
 
@@ -70,8 +73,9 @@ function Vehicles(props: { notify: (message: string) => void; onAdd?: () => void
     const matchesSearch = `${vehicle.id} ${vehicle.plate} ${vehicle.customer} ${vehicle.model} ${vehicle.year} ${vehicle.mileage}`.toLowerCase().includes(search.trim().toLowerCase());
     const matchesStatus = statusFilter === "All Status" || vehicle.status === statusFilter;
     const matchesType = typeFilter === "All Vehicle Types" || vehicle.model.toLowerCase().includes(typeFilter.toLowerCase());
-    return matchesSearch && matchesStatus && matchesType;
-  }), [search, statusFilter, typeFilter, vehicles]);
+    const matchesDate = matchesDateFilter(vehicle.lastService || (vehicle as any).createdAt, dateFilter);
+    return matchesSearch && matchesStatus && matchesType && matchesDate;
+  }), [search, statusFilter, typeFilter, vehicles, dateFilter]);
   const pageCount = Math.max(1, Math.ceil(filteredVehicles.length / 10));
   const currentPage = Math.min(page, pageCount);
   const pageVehicles = filteredVehicles.slice((currentPage - 1) * 10, currentPage * 10);
@@ -101,13 +105,25 @@ function Vehicles(props: { notify: (message: string) => void; onAdd?: () => void
         <section className="vehicle-list-card">
           <div className="vehicle-filters">
             <label className="vehicle-search"><Search size={16} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search by number plate, customer, or model..." aria-label="Search vehicles" /></label>
-            <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }} aria-label="Filter by vehicle status">
-              {["All Status", "In Service", "Ready", "Due", "Archived"].map((status) => <option key={status}>{status}</option>)}
-            </select>
-            <select value={typeFilter} onChange={(event) => { setTypeFilter(event.target.value); setPage(1); }} aria-label="Filter by vehicle type">
-              {["All Vehicle Types", "Toyota", "Nissan", "Lexus", "BMW", "Honda"].map((type) => <option key={type}>{type}</option>)}
-            </select>
-            <label className="vehicle-date-filter"><CalendarDays size={15} /><span>Last Service (All Dates)</span></label>
+            <CustomDropdown
+              value={statusFilter}
+              onChange={(val) => { setStatusFilter(val); setPage(1); }}
+              ariaLabel="Filter by vehicle status"
+              options={[
+                { value: "All Status", label: "All Status" },
+                { value: "In Service", label: "In Service", badge: "Live", badgeColor: "blue" },
+                { value: "Ready", label: "Ready", badge: "Pickup", badgeColor: "green" },
+                { value: "Due", label: "Due", badge: "Overdue", badgeColor: "red" },
+                { value: "Archived", label: "Archived", badge: "History", badgeColor: "purple" },
+              ]}
+            />
+            <CustomDropdown
+              value={typeFilter}
+              onChange={(val) => { setTypeFilter(val); setPage(1); }}
+              ariaLabel="Filter by vehicle type"
+              options={["All Vehicle Types", "Toyota", "Nissan", "Lexus", "BMW", "Honda"]}
+            />
+            <DateRangeFilter value={dateFilter} onChange={(df) => { setDateFilter(df); setPage(1); }} labelPrefix="Last Service" />
           </div>
           <div className="vehicle-table-scroll">
             <table className="vehicle-management-table">
