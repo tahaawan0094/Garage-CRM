@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, ArrowUp, Bell, Box, CalendarDays, CarFront, ChartColumn, Check, ChevronDown, CircleHelp, ClipboardList, Clock3, FileText, Headset, Home, Lock, Menu, MoreHorizontal, Plus, RotateCcw, Settings, ShoppingCart, Unlock, Users, Wifi, Wrench, X, type LucideIcon } from 'lucide-react';
+import { Activity, ArrowUp, Bell, Box, CalendarDays, CarFront, ChartColumn, Check, ChevronDown, CircleHelp, Clock3, FileText, Headset, Home, Lock, LogOut, Menu, MoreHorizontal, Plus, RotateCcw, Settings, ShieldCheck, ShoppingCart, Unlock, Users, Wifi, Wrench, X, type LucideIcon } from 'lucide-react';
 import SplashScreen from './components/SplashScreen';
 import PosBilling from './components/PosBilling';
 import NewIntake from './components/NewIntake';
@@ -12,6 +12,13 @@ import PartsInventory from './components/PartsInventory';
 import Mechanics from './components/Mechanics';
 import Reports from './components/Reports';
 import AddPartModal from './components/AddPartModal';
+import SettingsView, { defaultSettings, type GarageSettings } from './components/Settings';
+import UsersManagement from './components/UsersManagement';
+import RegistrationPage from './components/RegistrationPage';
+import ActivationPage from './components/ActivationPage';
+import LoginPage from './components/LoginPage';
+import { licenseService, type BusinessRegistration, type LicenseStatus } from './services/licenseService';
+import { authService, type AuthUser } from './services/authService';
 import { workOrdersApi, quotationsApi, customersApi, vehiclesApi, partsApi, mechanicsApi, invoicesApi } from './lib/api';
 import { getNextInvoiceId, commitInvoiceId } from './lib/sequence';
 import { DateRangeFilter, type DateFilterValue, matchesDateFilter } from './components/DateRangeFilter';
@@ -34,6 +41,106 @@ function App() {
   const [posInitialTab, setPosInitialTab] = useState<'sale' | 'returns'>('sale');
   const [posTargetInvoiceId, setPosTargetInvoiceId] = useState<string | undefined>(undefined);
   const [dashboardDateFilter, setDashboardDateFilter] = useState<DateFilterValue>({ type: 'today' });
+
+  // System Authentication & License Gate State
+  const [systemState, setSystemState] = useState<{
+    loading: boolean;
+    isRegistered: boolean;
+    registration: BusinessRegistration | null;
+    license: LicenseStatus | null;
+    currentUser: AuthUser | null;
+    showActivationOverride: boolean;
+  }>({
+    loading: true,
+    isRegistered: false,
+    registration: null,
+    license: null,
+    currentUser: authService.getCurrentUser(),
+    showActivationOverride: false,
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    const checkLicenseStatus = async () => {
+      try {
+        if (window.location.search.includes('reset') || window.location.search.includes('register')) {
+          localStorage.removeItem('garage_registration_cache');
+          localStorage.removeItem('garage_license_cache');
+          localStorage.removeItem('garage_crm_user_session_v1');
+          window.history.replaceState({}, '', window.location.pathname);
+        }
+
+        const res = await licenseService.getStatus();
+        if (isMounted) {
+          if (!res.isRegistered || !res.registration) {
+            localStorage.removeItem('garage_registration_cache');
+            localStorage.removeItem('garage_license_cache');
+            localStorage.removeItem('garage_crm_user_session_v1');
+            setSystemState({
+              loading: false,
+              isRegistered: false,
+              registration: null,
+              license: res.license || { status: 'UNREGISTERED', accessAllowed: false },
+              currentUser: null,
+              showActivationOverride: false,
+            });
+            return;
+          }
+          const savedUser = authService.getCurrentUser();
+          setSystemState(prev => ({
+            ...prev,
+            loading: false,
+            isRegistered: true,
+            registration: res.registration || null,
+            license: res.license,
+            currentUser: savedUser,
+          }));
+        }
+      } catch (err) {
+        if (isMounted) {
+          setSystemState(prev => ({ ...prev, loading: false }));
+        }
+      }
+    };
+    checkLicenseStatus();
+
+    const handleAuth = (e: any) => {
+      setSystemState(prev => ({ ...prev, currentUser: e.detail }));
+    };
+    window.addEventListener('garage-auth-changed', handleAuth);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('garage-auth-changed', handleAuth);
+    };
+  }, []);
+
+  const handleLogout = () => {
+    authService.logout();
+    setSystemState(prev => ({ ...prev, currentUser: null }));
+  };
+
+  const [appSettings, setAppSettings] = useState<GarageSettings>(() => {
+    try {
+      const saved = localStorage.getItem('garage_crm_settings_v1');
+      if (saved) return { ...defaultSettings, ...JSON.parse(saved) };
+    } catch (_) {}
+    return defaultSettings;
+  });
+
+  useEffect(() => {
+    const handleSettingsUpdate = (e: any) => {
+      if (e.detail) {
+        setAppSettings(e.detail);
+      } else {
+        try {
+          const saved = localStorage.getItem('garage_crm_settings_v1');
+          if (saved) setAppSettings({ ...defaultSettings, ...JSON.parse(saved) });
+        } catch (_) {}
+      }
+    };
+    window.addEventListener('garage-settings-updated', handleSettingsUpdate);
+    return () => window.removeEventListener('garage-settings-updated', handleSettingsUpdate);
+  }, []);
 
   const [sidebarLocked, setSidebarLocked] = useState<boolean>(() => {
     try {
@@ -93,7 +200,7 @@ function App() {
   useEffect(() => { if (!notice) return; const timer = window.setTimeout(() => setNotice(''), 3500); return () => window.clearTimeout(timer); }, [notice]);
   const open = (title: string) => { setModal(title); setSidebar(false); };
   const navigate = (label: string) => {
-    if (label === 'Dashboard' || label === 'POS Billing' || label === 'New Intake' || label === 'Work Orders' || label === 'Quotations' || label === 'Invoices' || label === 'Vehicles' || label === 'Customers' || label === 'Parts Inventory' || label === 'Mechanics' || label === 'Reports') {
+    if (label === 'Dashboard' || label === 'POS Billing' || label === 'New Intake' || label === 'Work Orders' || label === 'Quotations' || label === 'Invoices' || label === 'Vehicles' || label === 'Customers' || label === 'Parts Inventory' || label === 'Mechanics' || label === 'Reports' || label === 'Settings') {
       setPage(label);
       setSidebar(false);
       setQuery('');
@@ -108,7 +215,7 @@ function App() {
     setQuotes(current => current.filter(quote => quote.id !== id));
     if (decision === 'Approved') {
       quotationsApi.approve(id).catch(err => console.warn('Approve sync error:', err));
-      if (target) {
+      if (target && appSettings.autoInvoiceOnApproval !== false) {
         try {
           const newInvId = getNextInvoiceId();
           commitInvoiceId(newInvId);
@@ -128,12 +235,14 @@ function App() {
             items: target.items || [],
             workOrder: target.id,
           });
+          setNotice(`Quotation ${id} approved and invoice generated.`);
         } catch (invErr) {
           console.warn('Invoice generation error:', invErr);
         }
+      } else {
+        setNotice(`Quotation ${id} approved.`);
       }
       setRefreshTrigger(prev => prev + 1);
-      setNotice(`Quotation ${id} approved and invoice generated.`);
     } else {
       quotationsApi.reject(id).catch(err => console.warn('Reject sync error:', err));
       setRefreshTrigger(prev => prev + 1);
@@ -304,6 +413,113 @@ function App() {
     })),
   ];
 
+  const allowedNav = useMemo(() => {
+    const user = systemState.currentUser;
+    if (!user) return [];
+    if (user.role === 'owner') {
+      return [...nav, ['Users & Roles', ShieldCheck] as [string, LucideIcon]];
+    }
+    const filtered = nav.filter(([title]) => user.allowedTabs?.includes(title));
+    return filtered.length > 0 ? filtered : nav.slice(0, 1);
+  }, [systemState.currentUser]);
+
+  if (systemState.loading) {
+    return (
+      <div className="min-h-screen bg-[#0b1320] flex items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-12 h-12 border-3 border-[#f95932] border-t-transparent rounded-full animate-spin" />
+          <p className="text-slate-400 text-xs tracking-wider uppercase font-semibold">
+            Connecting Workshop System...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // 1. Not Registered -> Registration Page
+  if (!systemState.isRegistered || !systemState.registration) {
+    return (
+      <RegistrationPage
+        onRegistered={(reg) => {
+          setSystemState(prev => ({
+            ...prev,
+            isRegistered: true,
+            registration: reg,
+            license: {
+              status: 'ACTIVATION_REQUIRED',
+              accessAllowed: false,
+              message: 'Garage registered. Please enter license key.',
+            },
+          }));
+        }}
+      />
+    );
+  }
+
+  // 2. Unactivated, Suspended, or Expired -> Activation Page
+  if (!systemState.license?.accessAllowed || systemState.showActivationOverride) {
+    return (
+      <ActivationPage
+        registration={systemState.registration}
+        license={systemState.license || { status: 'ACTIVATION_REQUIRED', accessAllowed: false }}
+        onActivated={() => {
+          licenseService.getStatus().then(res => {
+            setSystemState(prev => ({
+              ...prev,
+              license: res.license,
+              showActivationOverride: false,
+            }));
+          });
+        }}
+        onGoToLogin={
+          systemState.license?.accessAllowed
+            ? () => setSystemState(prev => ({ ...prev, showActivationOverride: false }))
+            : undefined
+        }
+        onResetToRegister={() => {
+          setSystemState({
+            loading: false,
+            isRegistered: false,
+            registration: null,
+            license: { status: 'UNREGISTERED', accessAllowed: false },
+            currentUser: null,
+            showActivationOverride: false,
+          });
+        }}
+      />
+    );
+  }
+
+  // 3. Activated, but not logged in -> Login Page
+  if (!systemState.currentUser) {
+    return (
+      <LoginPage
+        garageName={appSettings.garageName || systemState.registration?.businessName}
+        garageLogo={
+          appSettings.logoUrl?.startsWith('data:')
+            ? appSettings.logoUrl
+            : `${import.meta.env.BASE_URL}${appSettings.logoUrl || 'Garage-crm-logo.png'}`
+        }
+        onLogin={(user) => {
+          setSystemState(prev => ({ ...prev, currentUser: user }));
+        }}
+        onOpenActivation={() => {
+          setSystemState(prev => ({ ...prev, showActivationOverride: true }));
+        }}
+        onResetToRegister={() => {
+          setSystemState({
+            loading: false,
+            isRegistered: false,
+            registration: null,
+            license: { status: 'UNREGISTERED', accessAllowed: false },
+            currentUser: null,
+            showActivationOverride: false,
+          });
+        }}
+      />
+    );
+  }
+
   return <div className="workspace">
     <aside
       className={`sidebar ${sidebar ? 'is-open' : ''} ${!isSidebarExpanded ? 'is-minimized' : ''} ${sidebarHovered && !sidebarLocked ? 'is-hover-expanded' : ''}`}
@@ -314,12 +530,20 @@ function App() {
         <a className="brand" href="#" aria-label="Garage CRM dashboard" onClick={(e) => { e.preventDefault(); navigate('Dashboard'); }}>
           <img
             className="brand-logo-icon"
-            src={`${import.meta.env.BASE_URL}Garage-crm-logo.png`}
-            alt="Garage CRM"
+            src={
+              appSettings.logoUrl?.startsWith('data:')
+                ? appSettings.logoUrl
+                : `${import.meta.env.BASE_URL}${appSettings.logoUrl || 'Garage-crm-logo.png'}`
+            }
+            alt={appSettings.garageName || 'Garage CRM'}
+            style={{ objectFit: 'contain' }}
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = `${import.meta.env.BASE_URL}Garage-crm-logo.png`;
+            }}
           />
           <div className="brand-title-wrap">
-            <span className="brand-title">AUTO CARE &amp; SERVICE</span>
-            <span className="brand-subtitle">Workshop CRM System</span>
+            <span className="brand-title">{(appSettings.garageName || 'AUTO CARE & SERVICE').toUpperCase()}</span>
+            <span className="brand-subtitle">{appSettings.facilitySubtitle || 'Workshop CRM System'}</span>
           </div>
         </a>
         <button
@@ -334,7 +558,7 @@ function App() {
       </div>
       <nav aria-label="Main navigation">
         <div className="nav-group-main">
-          {nav.map(([label, Icon]) => {
+          {allowedNav.map(([label, Icon]) => {
             const isSelected = label === page;
             return (
               <button
@@ -356,13 +580,18 @@ function App() {
       <header className="topbar">
         <button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setSidebar(true)}><Menu /></button>
         <div className="topbar-workshop-hub">
-          <div className="workshop-identity">
+          <div
+            className="workshop-identity"
+            onClick={() => navigate('Settings')}
+            style={{ cursor: 'pointer' }}
+            title="Open Workshop Settings"
+          >
             <div className="workshop-identity-icon">
               <Wrench size={16} />
             </div>
             <div className="workshop-identity-info">
-              <span className="workshop-name">Doha Central Workshop &amp; Service Hub</span>
-              <span className="workshop-branch">Main Garage Facility • Bays 01–12</span>
+              <span className="workshop-name">{appSettings.garageName || 'Doha Central Workshop & Service Hub'}</span>
+              <span className="workshop-branch">{appSettings.facilitySubtitle || 'Main Garage Facility • Bays 01–12'}</span>
             </div>
           </div>
         </div>
@@ -398,14 +627,28 @@ function App() {
               </div>
             )}
           </div>
-          <button className="profile" onClick={() => open('My profile')}>
-            <span className="profile-avatar">SA</span>
-            <span>
-              <strong>Sheikh Ahmed</strong>
-              <small>Garage Owner</small>
-            </span>
-            <ChevronDown size={17} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              className="profile"
+              onClick={() => (systemState.currentUser?.role === 'owner' ? navigate('Settings') : null)}
+              title="Workshop Settings & Profile"
+            >
+              <span className="profile-avatar">{getInitials(systemState.currentUser?.fullName || appSettings.ownerName)}</span>
+              <span>
+                <strong>{systemState.currentUser?.fullName || appSettings.ownerName || 'Sheikh Ahmed'}</strong>
+                <small className="capitalize">{systemState.currentUser?.role || appSettings.ownerRole || 'Garage Owner'}</small>
+              </span>
+              {systemState.currentUser?.role === 'owner' && <ChevronDown size={17} />}
+            </button>
+            <button
+              onClick={handleLogout}
+              className="icon-button"
+              style={{ width: '38px', height: '38px', borderRadius: '10px' }}
+              title="Sign Out from Garage CRM"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
         </div>
       </header>
       <div hidden={page !== 'POS Billing'}>
@@ -498,6 +741,12 @@ function App() {
       </div>
       <div hidden={page !== 'Reports'}>
         <Reports notify={setNotice} />
+      </div>
+      <div hidden={page !== 'Settings'}>
+        <SettingsView notify={setNotice} />
+      </div>
+      <div hidden={page !== 'Users & Roles'}>
+        <UsersManagement />
       </div>
       <main hidden={page !== 'Dashboard'} className="dashboard">
         <div className="dashboard-header-bar">

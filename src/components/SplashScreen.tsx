@@ -7,6 +7,13 @@ export default function SplashScreen() {
   const [isVisible, setIsVisible] = useState(true);
   const [count, setCount] = useState(0);
   const [statusText, setStatusText] = useState("Initializing workshop workspace...");
+  const [splashSettings] = useState(() => {
+    try {
+      const saved = localStorage.getItem("garage_crm_settings_v1");
+      if (saved) return JSON.parse(saved);
+    } catch (_) {}
+    return null;
+  });
 
   useEffect(() => {
     const startTime = performance.now();
@@ -94,8 +101,12 @@ export default function SplashScreen() {
           >
             {/* Logo without any box or badge */}
             <motion.img
-              src={`${import.meta.env.BASE_URL}Garage-crm-logo-light.png?v=${Date.now()}`}
-              alt="Garage CRM Logo"
+              src={
+                splashSettings?.logoUrl?.startsWith("data:")
+                  ? splashSettings.logoUrl
+                  : `${import.meta.env.BASE_URL}${splashSettings?.logoUrl || "Garage-crm-logo-light.png"}`
+              }
+              alt={splashSettings?.garageName || "Garage CRM Logo"}
               style={{
                 width: "125px",
                 height: "125px",
@@ -121,10 +132,17 @@ export default function SplashScreen() {
                 alignItems: "center",
                 gap: "5px",
                 lineHeight: 1.2,
+                textAlign: "center",
               }}
             >
-              <span>GARAGE</span>
-              <span style={{ color: "#ff631c" }}>CRM</span>
+              {splashSettings?.garageName ? (
+                <span>{splashSettings.garageName.toUpperCase()}</span>
+              ) : (
+                <>
+                  <span>GARAGE</span>
+                  <span style={{ color: "#ff631c" }}>CRM</span>
+                </>
+              )}
             </h1>
 
             {/* Subtitle */}
@@ -136,9 +154,10 @@ export default function SplashScreen() {
                 letterSpacing: "0.14em",
                 textTransform: "uppercase",
                 color: "#64748b",
+                textAlign: "center",
               }}
             >
-              Workshop Management System
+              {splashSettings?.facilitySubtitle || "Workshop Management System"}
             </p>
           </motion.div>
 

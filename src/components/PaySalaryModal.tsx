@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   AlertCircle,
 } from "lucide-react";
+import { CustomDropdown } from "./CustomDropdown";
 
 export interface SalaryPaymentData {
   id?: string;
@@ -49,13 +50,26 @@ export const PaySalaryModal: React.FC<PaySalaryModalProps> = ({
   mechanics,
   preSelectedMechanicId,
 }) => {
+  const [docSettings] = useState<any>(() => {
+    try {
+      const saved = localStorage.getItem("garage_crm_settings_v1");
+      return saved ? JSON.parse(saved) : null;
+    } catch (_) { return null; }
+  });
+
   const [selectedMechanicId, setSelectedMechanicId] = useState("");
   const [month, setMonth] = useState("October 2026");
   const [baseSalary, setBaseSalary] = useState<number>(4500);
   const [bonus, setBonus] = useState<number>(0);
   const [deductions, setDeductions] = useState<number>(0);
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split("T")[0]);
-  const [paymentMethod, setPaymentMethod] = useState<"Bank Transfer" | "Cash" | "Cheque">("Bank Transfer");
+  const [paymentMethod, setPaymentMethod] = useState<"Bank Transfer" | "Cash" | "Cheque">(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem("garage_crm_settings_v1") || "{}");
+      if (s.defaultPaymentMethod === "Cash" || s.defaultPaymentMethod === "Cheque") return s.defaultPaymentMethod;
+    } catch (_) {}
+    return "Bank Transfer";
+  });
   const [reference, setReference] = useState("");
   const [status, setStatus] = useState<"Paid" | "Pending">("Paid");
   const [notes, setNotes] = useState("");
@@ -282,29 +296,18 @@ export const PaySalaryModal: React.FC<PaySalaryModalProps> = ({
                 >
                   Select Technician *
                 </label>
-                <select
-                  required
+                <CustomDropdown
                   value={selectedMechanicId}
-                  onChange={(e) => handleMechanicChange(e.target.value)}
-                  style={{
-                    width: "100%",
-                    height: "36px",
-                    padding: "0 10px",
-                    border: "1px solid #dfe5ee",
-                    borderRadius: "6px",
-                    fontSize: "12.5px",
-                    color: "#1e293b",
-                    background: "#ffffff",
-                    outline: "none",
-                    boxSizing: "border-box",
-                  }}
-                >
-                  {mechanics.map((m) => (
-                    <option key={m.id || m.mechanicId} value={m.id || m.mechanicId}>
-                      {m.name} ({m.role}) — Base: QAR {Number(m.baseSalary || 4500).toLocaleString()}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(val) => handleMechanicChange(val)}
+                  placeholder="Select Technician..."
+                  options={mechanics.map((m) => ({
+                    value: m.id || m.mechanicId,
+                    label: `${m.name} (${m.role})`,
+                    detail: `Base: QAR ${Number(m.baseSalary || 4500).toLocaleString()}`,
+                    badge: m.status || "Available",
+                    badgeColor: (m.status === "On Job" ? "blue" : m.status === "Available" ? "green" : "orange") as any,
+                  }))}
+                />
               </div>
 
               <div>
@@ -319,29 +322,15 @@ export const PaySalaryModal: React.FC<PaySalaryModalProps> = ({
                 >
                   Salary Month *
                 </label>
-                <select
-                  required
+                <CustomDropdown
                   value={month}
-                  onChange={(e) => setMonth(e.target.value)}
-                  style={{
-                    width: "100%",
-                    height: "36px",
-                    padding: "0 10px",
-                    border: "1px solid #dfe5ee",
-                    borderRadius: "6px",
-                    fontSize: "12.5px",
-                    color: "#1e293b",
-                    background: "#ffffff",
-                    outline: "none",
-                    boxSizing: "border-box",
-                  }}
-                >
-                  {MONTH_OPTIONS.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(val) => setMonth(val)}
+                  placeholder="Select Month..."
+                  options={MONTH_OPTIONS.map((m) => ({
+                    value: m,
+                    label: m,
+                  }))}
+                />
               </div>
             </div>
 
@@ -554,26 +543,16 @@ export const PaySalaryModal: React.FC<PaySalaryModalProps> = ({
                 >
                   Payment Method
                 </label>
-                <select
+                <CustomDropdown
                   value={paymentMethod}
-                  onChange={(e) => setPaymentMethod(e.target.value as any)}
-                  style={{
-                    width: "100%",
-                    height: "36px",
-                    padding: "0 10px",
-                    border: "1px solid #dfe5ee",
-                    borderRadius: "6px",
-                    fontSize: "12.5px",
-                    color: "#1e293b",
-                    background: "#ffffff",
-                    outline: "none",
-                    boxSizing: "border-box",
-                  }}
-                >
-                  <option value="Bank Transfer">Bank Transfer (WPS)</option>
-                  <option value="Cash">Cash Disbursement</option>
-                  <option value="Cheque">Company Cheque</option>
-                </select>
+                  onChange={(val) => setPaymentMethod(val as any)}
+                  placeholder="Select Method..."
+                  options={[
+                    { value: "Bank Transfer", label: "Bank Transfer (WPS)", detail: "Direct bank deposit via WPS" },
+                    { value: "Cash", label: "Cash Disbursement", detail: "Counter / Cash drawer payout" },
+                    { value: "Cheque", label: "Company Cheque", detail: "Official company cheque voucher" },
+                  ]}
+                />
               </div>
 
               <div>
@@ -588,25 +567,15 @@ export const PaySalaryModal: React.FC<PaySalaryModalProps> = ({
                 >
                   Payment Status
                 </label>
-                <select
+                <CustomDropdown
                   value={status}
-                  onChange={(e) => setStatus(e.target.value as any)}
-                  style={{
-                    width: "100%",
-                    height: "36px",
-                    padding: "0 10px",
-                    border: "1px solid #dfe5ee",
-                    borderRadius: "6px",
-                    fontSize: "12.5px",
-                    color: "#1e293b",
-                    background: "#ffffff",
-                    outline: "none",
-                    boxSizing: "border-box",
-                  }}
-                >
-                  <option value="Paid">Paid / Disbursed</option>
-                  <option value="Pending">Pending Approval</option>
-                </select>
+                  onChange={(val) => setStatus(val as any)}
+                  placeholder="Select Status..."
+                  options={[
+                    { value: "Paid", label: "Paid / Disbursed", badge: "Paid", badgeColor: "green" },
+                    { value: "Pending", label: "Pending Approval", badge: "Pending", badgeColor: "orange" },
+                  ]}
+                />
               </div>
             </div>
 
@@ -634,7 +603,7 @@ export const PaySalaryModal: React.FC<PaySalaryModalProps> = ({
                   type="text"
                   value={reference}
                   onChange={(e) => setReference(e.target.value)}
-                  placeholder="e.g. QNB-TXN-884920"
+                  placeholder={docSettings?.wpsEmployerId ? `e.g. ${docSettings.wpsEmployerId}-TXN-884920` : "e.g. QNB-TXN-884920"}
                   style={{
                     width: "100%",
                     height: "36px",

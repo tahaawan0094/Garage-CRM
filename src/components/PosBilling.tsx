@@ -203,6 +203,27 @@ export default function PosBilling({
   const [returnNotes, setReturnNotes] = useState<string>('');
   const [restockToInventory, setRestockToInventory] = useState<boolean>(true);
 
+  const [docSettings, setDocSettings] = useState<any>(() => {
+    try {
+      const saved = localStorage.getItem('garage_crm_settings_v1');
+      return saved ? JSON.parse(saved) : null;
+    } catch (_) { return null; }
+  });
+
+  useEffect(() => {
+    const onSettings = (e: any) => {
+      if (e.detail) setDocSettings(e.detail);
+      else {
+        try {
+          const saved = localStorage.getItem('garage_crm_settings_v1');
+          if (saved) setDocSettings(JSON.parse(saved));
+        } catch (_) {}
+      }
+    };
+    window.addEventListener('garage-settings-updated', onSettings);
+    return () => window.removeEventListener('garage-settings-updated', onSettings);
+  }, []);
+
   // Fetch actual parts from inventory database
   const loadInventory = () => {
     setIsLoadingParts(true);
@@ -1765,11 +1786,24 @@ export default function PosBilling({
             <div className="pos-print-document">
               <div className="pos-print-header">
                 <div className="pos-print-brand">
-                  <img src={`${import.meta.env.BASE_URL}Garage-crm-logo.png`} alt="Garage Logo" />
+                  {docSettings?.showLogoOnPrint !== false && (
+                    <img
+                      src={
+                        docSettings?.logoUrl?.startsWith('data:')
+                          ? docSettings.logoUrl
+                          : `${import.meta.env.BASE_URL}${docSettings?.logoUrl || 'Garage-crm-logo.png'}`
+                      }
+                      alt="Garage Logo"
+                      style={{ maxHeight: '46px', width: 'auto', objectFit: 'contain' }}
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = `${import.meta.env.BASE_URL}Garage-crm-logo.png`;
+                      }}
+                    />
+                  )}
                   <div>
-                    <h2>DOHA CENTRAL GARAGE &amp; AUTO PARTS</h2>
-                    <p>Industrial Area, Street 15, Doha - Qatar | Tel: +974 4455 6677</p>
-                    <p>Tax Reg. (TRN): QTR-VAT-9021884 | Commercial Reg: 10293847</p>
+                    <h2>{(docSettings?.garageName || 'DOHA CENTRAL GARAGE & AUTO PARTS').toUpperCase()}</h2>
+                    <p>{docSettings?.facilitySubtitle || 'Industrial Area, Street 15, Doha - Qatar'} | Tel: {docSettings?.phone || '+974 4455 6677'}</p>
+                    <p>Tax Reg. (TRN): {docSettings?.taxNumber || 'QTR-VAT-9021884'} | Commercial Reg: {docSettings?.crNumber || '10293847'}</p>
                   </div>
                 </div>
                 <div className="pos-print-badge-box">
@@ -1881,11 +1915,24 @@ export default function PosBilling({
             <div className="pos-print-document return-document">
               <div className="pos-print-header">
                 <div className="pos-print-brand">
-                  <img src={`${import.meta.env.BASE_URL}Garage-crm-logo.png`} alt="Garage Logo" />
+                  {docSettings?.showLogoOnPrint !== false && (
+                    <img
+                      src={
+                        docSettings?.logoUrl?.startsWith('data:')
+                          ? docSettings.logoUrl
+                          : `${import.meta.env.BASE_URL}${docSettings?.logoUrl || 'Garage-crm-logo.png'}`
+                      }
+                      alt="Garage Logo"
+                      style={{ maxHeight: '46px', width: 'auto', objectFit: 'contain' }}
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = `${import.meta.env.BASE_URL}Garage-crm-logo.png`;
+                      }}
+                    />
+                  )}
                   <div>
-                    <h2>DOHA CENTRAL GARAGE &amp; AUTO PARTS</h2>
-                    <p>Industrial Area, Street 15, Doha - Qatar | Tel: +974 4455 6677</p>
-                    <p>Tax Reg. (TRN): QTR-VAT-9021884 | Commercial Reg: 10293847</p>
+                    <h2>{(docSettings?.garageName || 'DOHA CENTRAL GARAGE & AUTO PARTS').toUpperCase()}</h2>
+                    <p>{docSettings?.facilitySubtitle || 'Industrial Area, Street 15, Doha - Qatar'} | Tel: {docSettings?.phone || '+974 4455 6677'}</p>
+                    <p>Tax Reg. (TRN): {docSettings?.taxNumber || 'QTR-VAT-9021884'} | Commercial Reg: {docSettings?.crNumber || '10293847'}</p>
                   </div>
                 </div>
                 <div className="pos-print-badge-box">

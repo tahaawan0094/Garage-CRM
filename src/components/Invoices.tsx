@@ -74,6 +74,26 @@ function Invoices(props: { notify: (message: string) => void; onCreate?: (initia
   const [deleteModalInvoice, setDeleteModalInvoice] = useState<Invoice | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [viewInfoTarget, setViewInfoTarget] = useState<ViewInfoTarget | null>(null);
+  const [docSettings, setDocSettings] = useState<any>(() => {
+    try {
+      const saved = localStorage.getItem('garage_crm_settings_v1');
+      return saved ? JSON.parse(saved) : null;
+    } catch (_) { return null; }
+  });
+
+  useEffect(() => {
+    const onSettings = (e: any) => {
+      if (e.detail) setDocSettings(e.detail);
+      else {
+        try {
+          const saved = localStorage.getItem('garage_crm_settings_v1');
+          if (saved) setDocSettings(JSON.parse(saved));
+        } catch (_) {}
+      }
+    };
+    window.addEventListener('garage-settings-updated', onSettings);
+    return () => window.removeEventListener('garage-settings-updated', onSettings);
+  }, []);
 
   useEffect(() => {
     invoicesApi.getAll({ limit: 100 })
@@ -402,15 +422,24 @@ function Invoices(props: { notify: (message: string) => void; onCreate?: (initia
             {/* Tax Invoice Document Header */}
             <div className="tax-invoice-header">
               <div className="tax-invoice-brand" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <img
-                  src={`${import.meta.env.BASE_URL}Garage-crm-logo-light.png`}
-                  alt="Company Logo"
-                  style={{ height: "46px", width: "auto", objectFit: "contain" }}
-                />
+                {docSettings?.showLogoOnPrint !== false && (
+                  <img
+                    src={
+                      docSettings?.logoUrl?.startsWith("data:")
+                        ? docSettings.logoUrl
+                        : `${import.meta.env.BASE_URL}${docSettings?.logoUrl || "Garage-crm-logo-light.png"}`
+                    }
+                    alt="Company Logo"
+                    style={{ height: "46px", width: "auto", objectFit: "contain" }}
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = `${import.meta.env.BASE_URL}Garage-crm-logo-light.png`;
+                    }}
+                  />
+                )}
                 <div>
-                  <h2>DOHA CENTRAL WORKSHOP</h2>
-                  <p>Auto Care &amp; Service Hub · Bays 01–12 · Doha, Qatar</p>
-                  <p>Phone: +974 5555 1234 · C.R: 84920/1</p>
+                  <h2>{(docSettings?.garageName || "DOHA CENTRAL WORKSHOP").toUpperCase()}</h2>
+                  <p>{docSettings?.facilitySubtitle || "Auto Care & Service Hub · Bays 01–12"} · {docSettings?.city || "Doha"}, {docSettings?.country || "Qatar"}</p>
+                  <p>Phone: {docSettings?.phone || "+974 5555 1234"} · C.R: {docSettings?.crNumber || "84920/1"}</p>
                 </div>
               </div>
               <div className="tax-invoice-meta">
@@ -477,8 +506,8 @@ function Invoices(props: { notify: (message: string) => void; onCreate?: (initia
                   <strong>{money(selectedInvoice.amount)}</strong>
                 </div>
                 <div>
-                  <span>VAT (5%)</span>
-                  <strong>{money(0)}</strong>
+                  <span>VAT ({typeof docSettings?.taxRate === 'number' ? docSettings.taxRate : 0}%)</span>
+                  <strong>{money((selectedInvoice.amount * (typeof docSettings?.taxRate === 'number' ? docSettings.taxRate : 0)) / 100)}</strong>
                 </div>
                 {selectedInvoice.discount > 0 && (
                   <div>
@@ -488,7 +517,7 @@ function Invoices(props: { notify: (message: string) => void; onCreate?: (initia
                 )}
                 <div className="grand-total-row">
                   <span>Grand Total</span>
-                  <span>{money(selectedInvoice.amount)}</span>
+                  <span>{money(selectedInvoice.amount + ((selectedInvoice.amount * (typeof docSettings?.taxRate === 'number' ? docSettings.taxRate : 0)) / 100) - (selectedInvoice.discount || 0))}</span>
                 </div>
               </div>
             </div>
@@ -497,12 +526,14 @@ function Invoices(props: { notify: (message: string) => void; onCreate?: (initia
             <div className="tax-invoice-footer">
               <div>
                 <p className="thank-you">Thank you for your business!</p>
-                <p className="warranty">Warranty valid for 30 days or 1,000 km from service date.</p>
+                <p className="warranty">{docSettings?.invoiceFooterNotes || "Warranty valid for 30 days or 1,000 km from service date."}</p>
               </div>
-              <div className="signature-box">
-                <div className="signature-line" />
-                <span>Authorized Signature</span>
-              </div>
+              {docSettings?.showSignatureLine !== false && (
+                <div className="signature-box">
+                  <div className="signature-line" />
+                  <span>Authorized Signature</span>
+                </div>
+              )}
             </div>
           </div>
         </div>

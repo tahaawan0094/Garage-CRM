@@ -143,9 +143,30 @@ function Quotations({
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All Status");
   const [advisorFilter, setAdvisorFilter] = useState("All Service Advisors");
-  const [dateFilter, setDateFilter] = useState<DateFilterValue>({ type: 'all' });
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>({ type: 'today' });
   const [deleteModalQuote, setDeleteModalQuote] = useState<Quote | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const [docSettings, setDocSettings] = useState<any>(() => {
+    try {
+      const saved = localStorage.getItem('garage_crm_settings_v1');
+      return saved ? JSON.parse(saved) : null;
+    } catch (_) { return null; }
+  });
+
+  useEffect(() => {
+    const onSettings = (e: any) => {
+      if (e.detail) setDocSettings(e.detail);
+      else {
+        try {
+          const saved = localStorage.getItem('garage_crm_settings_v1');
+          if (saved) setDocSettings(JSON.parse(saved));
+        } catch (_) {}
+      }
+    };
+    window.addEventListener('garage-settings-updated', onSettings);
+    return () => window.removeEventListener('garage-settings-updated', onSettings);
+  }, []);
 
   const fetchAndMergeQuotations = () => {
     let localQuotes: Quote[] = [];
@@ -229,26 +250,30 @@ function Quotations({
     if (decision === "Approved") {
       quotationsApi.approve(targetId).catch((err) => console.warn("Approve sync error:", err));
 
-      const newInvId = getNextInvoiceId();
-      commitInvoiceId(newInvId);
-      invoicesApi.create({
-        invoiceId: newInvId,
-        customer: target.customer,
-        vehicle: target.vehicle,
-        plate: target.plate || 'TBD',
-        year: target.year || '2024',
-        service: target.service,
-        detail: target.detail || '',
-        amount: target.amount,
-        total: target.amount,
-        status: 'Pending',
-        advisor: target.advisor || 'Ali Hassan',
-        date: new Date().toLocaleDateString('en-GB'),
-        items: target.items || [],
-        workOrder: target.id,
-      }).then(() => {
-        onSynced?.();
-      }).catch(err => console.warn("Invoice auto-creation sync error:", err));
+      let createdInvoiceId: string | null = null;
+      if (docSettings?.autoInvoiceOnApproval !== false) {
+        const newInvId = getNextInvoiceId();
+        createdInvoiceId = newInvId;
+        commitInvoiceId(newInvId);
+        invoicesApi.create({
+          invoiceId: newInvId,
+          customer: target.customer,
+          vehicle: target.vehicle,
+          plate: target.plate || 'TBD',
+          year: target.year || '2024',
+          service: target.service,
+          detail: target.detail || '',
+          amount: target.amount,
+          total: target.amount,
+          status: 'Pending',
+          advisor: target.advisor || 'Ali Hassan',
+          date: new Date().toLocaleDateString('en-GB'),
+          items: target.items || [],
+          workOrder: target.id,
+        }).then(() => {
+          onSynced?.();
+        }).catch(err => console.warn("Invoice auto-creation sync error:", err));
+      }
 
       workOrdersApi.update(target.id.replace('QT-', 'WO-'), { status: 'In Progress' }).catch(() => {
         workOrdersApi.create({
@@ -265,7 +290,7 @@ function Quotations({
         }).catch(() => {});
       });
 
-      notify(`Quotation ${targetId} approved! Invoice ${newInvId} created in Invoices.`);
+      notify(createdInvoiceId ? `Quotation ${targetId} approved! Invoice ${createdInvoiceId} created in Invoices.` : `Quotation ${targetId} approved!`);
       onSynced?.();
     } else {
       quotationsApi.reject(targetId).catch((err) => console.warn("Reject sync error:", err));
@@ -377,7 +402,12 @@ function Quotations({
               <div className="quote-detail-table-scroll"><table><thead><tr><th>#</th><th>Item / Service</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead><tbody>
                 {selectedQuote.items.map((item, index) => <tr key={`${selectedQuote.id}-${item.name}`}><td>{index + 1}</td><td>{item.name}</td><td>{item.quantity}</td><td>{money(item.unitPrice)}</td><td>{money(item.quantity * item.unitPrice)}</td></tr>)}
               </tbody></table></div>
-              <div className="quote-detail-totals"><div><span>Subtotal</span><strong>{money(selectedQuote.amount)}</strong></div><div><span>VAT (5%)</span><strong>{money(0)}</strong></div><div><span>Discount (-)</span><strong className="negative">{money(0)}</strong></div><div className="grand"><strong>Grand Total</strong><strong>{money(selectedQuote.amount)}</strong></div></div>
+              <div className="quote-detail-totals">
+                <div><span>Subtotal</span><strong>{money(selectedQuote.amount)}</strong></div>
+                <div><span>VAT ({typeof docSettings?.taxRate === 'number' ? docSettings.taxRate : 0}%)</span><strong>{money((selectedQuote.amount * (typeof docSettings?.taxRate === 'number' ? docSettings.taxRate : 0)) / 100)}</strong></div>
+                <div><span>Discount (-)</span><strong className="negative">{money(0)}</strong></div>
+                <div className="grand"><strong>Grand Total</strong><strong>{money(selectedQuote.amount + ((selectedQuote.amount * (typeof docSettings?.taxRate === 'number' ? docSettings.taxRate : 0)) / 100))}</strong></div>
+              </div>
             </section>
             <div className="quote-detail-actions">
               <button onClick={() => window.print()}><Printer size={14} />Reprint Quote</button>
@@ -409,15 +439,24 @@ function Quotations({
             {/* Quotation Slip Header */}
             <div className="tax-invoice-header">
               <div className="tax-invoice-brand" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <img
-                  src={`${import.meta.env.BASE_URL}Garage-crm-logo-light.png`}
-                  alt="Company Logo"
-                  style={{ height: "46px", width: "auto", objectFit: "contain" }}
-                />
+                {docSettings?.showLogoOnPrint !== false && (
+                  <img
+                    src={
+                      docSettings?.logoUrl?.startsWith("data:")
+                        ? docSettings.logoUrl
+                        : `${import.meta.env.BASE_URL}${docSettings?.logoUrl || "Garage-crm-logo-light.png"}`
+                    }
+                    alt="Company Logo"
+                    style={{ height: "46px", width: "auto", objectFit: "contain" }}
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = `${import.meta.env.BASE_URL}Garage-crm-logo-light.png`;
+                    }}
+                  />
+                )}
                 <div>
-                  <h2>DOHA CENTRAL WORKSHOP</h2>
-                  <p>Auto Care &amp; Service Hub · Bays 01–12 · Doha, Qatar</p>
-                  <p>Phone: +974 5555 1234 · C.R: 84920/1</p>
+                  <h2>{(docSettings?.garageName || "DOHA CENTRAL WORKSHOP").toUpperCase()}</h2>
+                  <p>{docSettings?.facilitySubtitle || "Auto Care & Service Hub · Bays 01–12"} · {docSettings?.city || "Doha"}, {docSettings?.country || "Qatar"}</p>
+                  <p>Phone: {docSettings?.phone || "+974 5555 1234"} · C.R: {docSettings?.crNumber || "84920/1"}</p>
                 </div>
               </div>
               <div className="tax-invoice-meta">
@@ -486,12 +525,12 @@ function Quotations({
                   <strong>{money(selectedQuote.amount)}</strong>
                 </div>
                 <div>
-                  <span>VAT (5%)</span>
-                  <strong>{money(0)}</strong>
+                  <span>VAT ({typeof docSettings?.taxRate === 'number' ? docSettings.taxRate : 0}%)</span>
+                  <strong>{money((selectedQuote.amount * (typeof docSettings?.taxRate === 'number' ? docSettings.taxRate : 0)) / 100)}</strong>
                 </div>
                 <div className="grand-total-row">
                   <span>Grand Total</span>
-                  <span>{money(selectedQuote.amount)}</span>
+                  <span>{money(selectedQuote.amount + ((selectedQuote.amount * (typeof docSettings?.taxRate === 'number' ? docSettings.taxRate : 0)) / 100))}</span>
                 </div>
               </div>
             </div>
@@ -499,19 +538,21 @@ function Quotations({
             {/* Footer Notes & Signatures */}
             <div className="tax-invoice-footer">
               <div>
-                <p className="thank-you">Thank you for considering Garage Workspace!</p>
-                <p className="warranty">This quotation is valid for 15 days from date of issue.</p>
+                <p className="thank-you">Thank you for considering {docSettings?.garageName || "Garage Workspace"}!</p>
+                <p className="warranty">This quotation is valid for {docSettings?.quotationValidityDays || 15} days from date of issue.</p>
               </div>
-              <div className="tax-invoice-signatures">
-                <div className="sig-block">
-                  <div className="sig-line"></div>
-                  <span>Service Advisor</span>
+              {docSettings?.showSignatureLine !== false && (
+                <div className="tax-invoice-signatures">
+                  <div className="sig-block">
+                    <div className="sig-line"></div>
+                    <span>Service Advisor</span>
+                  </div>
+                  <div className="sig-block">
+                    <div className="sig-line"></div>
+                    <span>Customer Approval</span>
+                  </div>
                 </div>
-                <div className="sig-block">
-                  <div className="sig-line"></div>
-                  <span>Customer Approval</span>
-                </div>
-              </div>
+              )}
             </div>
           </div>
         </div>

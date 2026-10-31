@@ -11,8 +11,10 @@ import {
 import {
   getNextWorkOrderId,
   getNextInvoiceId,
+  getNextQuotationId,
   commitWorkOrderId,
   commitInvoiceId,
+  commitQuotationId,
 } from "../lib/sequence";
 import { CustomDropdown } from "./CustomDropdown";
 import {
@@ -552,6 +554,19 @@ function NewIntake(props: {
   const [documentType, setDocumentType] = useState<DocumentType>("Quotation");
   const previewRef = useRef<HTMLElement>(null);
 
+  const [docSettings, setDocSettings] = useState<any>(() => {
+    try {
+      const saved = localStorage.getItem("garage_crm_settings_v1");
+      return saved ? JSON.parse(saved) : null;
+    } catch (_) { return null; }
+  });
+  const [customServices, setCustomServices] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem("garage_crm_services_catalog_v1");
+      return saved ? JSON.parse(saved) : [];
+    } catch (_) { return []; }
+  });
+
   useEffect(() => {
     // Dynamic mechanics loader
     const loadMechanics = () => {
@@ -625,9 +640,32 @@ function NewIntake(props: {
       }
     }).catch(() => {});
 
+    const onSettings = (e: any) => {
+      if (e.detail) setDocSettings(e.detail);
+      else {
+        try {
+          const saved = localStorage.getItem("garage_crm_settings_v1");
+          if (saved) setDocSettings(JSON.parse(saved));
+        } catch (_) {}
+      }
+    };
+    const onServices = (e: any) => {
+      if (e.detail && Array.isArray(e.detail)) setCustomServices(e.detail);
+      else {
+        try {
+          const saved = localStorage.getItem("garage_crm_services_catalog_v1");
+          if (saved) setCustomServices(JSON.parse(saved));
+        } catch (_) {}
+      }
+    };
+    window.addEventListener("garage-settings-updated", onSettings);
+    window.addEventListener("garage_services_updated", onServices);
+
     return () => {
       window.removeEventListener("garage_mechanics_updated", loadMechanics);
       window.removeEventListener("garage_parts_updated", loadParts);
+      window.removeEventListener("garage-settings-updated", onSettings);
+      window.removeEventListener("garage_services_updated", onServices);
     };
   }, []);
 
@@ -1010,12 +1048,13 @@ function NewIntake(props: {
     ...labourCharges.map((charge) => ({ description: charge.service, price: charge.amount })),
     ...additionalCharges.map((charge) => ({ description: charge.name, price: charge.amount })),
   ];
-  const quoteNumber = "QT-00018";
+  const [quoteNumber, _setQuoteNumber] = useState<string>(() => getNextQuotationId());
   const quoteValidityDays = (() => {
-    if (!quotationDate || !quotationValidUntil) return 15;
+    if (docSettings?.quotationValidityDays) return docSettings.quotationValidityDays;
+    if (!quotationDate || !quotationValidUntil) return 7;
     const start = new Date(`${quotationDate}T00:00:00Z`).getTime();
     const end = new Date(`${quotationValidUntil}T00:00:00Z`).getTime();
-    if (!Number.isFinite(start) || !Number.isFinite(end)) return 15;
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return 7;
     return Math.max(1, Math.ceil((end - start) / 86_400_000));
   })();
   const totalPaid = payments.reduce((total, payment) => total + payment.amount, 0);
@@ -1192,6 +1231,31 @@ function NewIntake(props: {
 
     if (status === "Approved") {
       commitWorkOrderId(form.workOrder);
+      commitQuotationId(quoteNumber);
+      if (docSettings?.autoInvoiceOnApproval !== false) {
+        try {
+          const autoInvId = getNextInvoiceId();
+          commitInvoiceId(autoInvId);
+          invoicesApi.create({
+            invoiceId: autoInvId,
+            customer: customer.name || 'Customer',
+            phone: customer.mobile || customer.phone || '',
+            vehicle: vehicle.carName || `${vehicle.make} ${vehicle.model}`.trim() || 'Vehicle',
+            plate: vehicle.plateNumber || 'TBD',
+            year: vehicle.year || '2024',
+            service: selectedServices[0] || 'General Service',
+            amount: quotationTotal || 0,
+            total: quotationTotal || 0,
+            status: 'Pending',
+            advisor: form.advisor || 'Ali Hassan',
+            date: new Date().toLocaleDateString('en-GB'),
+            items: quoteItems,
+            workOrder: form.workOrder,
+          }).catch(invErr => console.warn("Auto invoice sync error:", invErr));
+        } catch (e) {
+          console.warn("Auto invoice creation failed:", e);
+        }
+      }
       try {
         await workOrdersApi.create({
           workOrderId: form.workOrder,
@@ -2139,13 +2203,38 @@ function NewIntake(props: {
                           <CustomDropdown
                             value={labourService}
                             placeholder="Select service..."
-                            onChange={(val) => setLabourService(val)}
-                            options={serviceOptions.map((service) => ({
-                              value: service,
-                              label: service,
-                              badge: "Service",
-                              badgeColor: "blue" as const,
-                            }))}
+                            onChange={(val) => {
+                              setLabourService(val);
+                              const lower = val.toLowerCase();
+                              const matched = customServices.find((s: any) => s.name?.toLowerCase() === lower);
+                              if (matched && matched.standardRate) {
+                                setLabourAmount(String(matched.standardRate));
+                              } else if (lower.includes("diagnostic")) {
+                                setLabourAmount(String(docSettings?.diagnosticFee ?? 200));
+                              } else if (lower.includes("ac") || lower.includes("air condition") || lower.includes("climate")) {
+                                setLabourAmount(String(docSettings?.acRechargeFee ?? 250));
+                              } else if (lower.includes("alignment") || lower.includes("wheel")) {
+                                setLabourAmount(String(docSettings?.alignmentFee ?? 180));
+                              } else if (docSettings?.laborHourlyRate) {
+                                setLabourAmount(String(docSettings.laborHourlyRate));
+                              }
+                            }}
+                            options={[
+                              ...customServices.map((cs: any) => ({
+                                value: cs.name,
+                                label: `${cs.name} — QAR ${cs.standardRate || 0}`,
+                                badge: cs.category || "Catalog",
+                                badgeColor: "orange" as const,
+                              })),
+                              ...serviceOptions
+                                .filter((so) => !customServices.some((cs: any) => cs.name?.toLowerCase() === so.toLowerCase()))
+                                .map((service) => ({
+                                  value: service,
+                                  label: service,
+                                  badge: "Standard",
+                                  badgeColor: "blue" as const,
+                                })),
+                            ]}
                           />
                         </label>
                         <label className="intake-field" style={{ minWidth: "180px" }}>
@@ -2825,17 +2914,26 @@ function NewIntake(props: {
           <article className="intake-preview-paper">
             <header className="intake-paper-header" style={{ alignItems: "flex-start", paddingTop: "0px", paddingBottom: "10px" }}>
               <div className="intake-paper-brand" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <img
-                  src={`${import.meta.env.BASE_URL}Garage-crm-logo-light.png`}
-                  alt="Company Logo"
-                  style={{ height: "48px", width: "auto", objectFit: "contain", display: "block" }}
-                />
+                {docSettings?.showLogoOnPrint !== false && (
+                  <img
+                    src={
+                      docSettings?.logoUrl?.startsWith("data:")
+                        ? docSettings.logoUrl
+                        : `${import.meta.env.BASE_URL}${docSettings?.logoUrl || "Garage-crm-logo-light.png"}`
+                    }
+                    alt="Company Logo"
+                    style={{ height: "48px", width: "auto", objectFit: "contain", display: "block" }}
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = `${import.meta.env.BASE_URL}Garage-crm-logo-light.png`;
+                    }}
+                  />
+                )}
                 <div>
                   <strong style={{ fontSize: "14px", fontWeight: 800, color: "#1e293b", display: "block", lineHeight: 1.2 }}>
-                    DOHA CENTRAL WORKSHOP
+                    {(docSettings?.garageName || "DOHA CENTRAL WORKSHOP").toUpperCase()}
                   </strong>
                   <span style={{ fontSize: "10px", color: "#64748b", fontWeight: 500, display: "block", marginTop: "2px" }}>
-                    Auto Care &amp; Service Hub · Bays 01–12
+                    {docSettings?.facilitySubtitle || "Auto Care & Service Hub · Bays 01–12"}
                   </span>
                 </div>
               </div>
@@ -2937,23 +3035,25 @@ function NewIntake(props: {
 
                 <section className="intake-paper-notes" style={{ marginTop: "10px" }}>
                   <h3>Gate Pass Authorization</h3>
-                  <p>Vehicle is inspected, road-tested, and fully authorized to exit the workshop premises.</p>
+                  <p>{docSettings?.gatePassDisclaimer || "Vehicle is inspected, road-tested, and fully authorized to exit the workshop premises."}</p>
                   {selectedServices.length > 0 && <small>Services performed: {selectedServices.join(", ")}</small>}
                   <p>Service Advisor: {form.advisor || "Ali Hassan"} · Mechanic: {form.mechanic || "M. Khan"}</p>
                 </section>
 
-                <div className="intake-paper-signature" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginTop: "14px" }}>
-                  <div>
-                    <strong>Customer Handover Sign:</strong>
-                    <span style={{ display: "block", borderBottom: "1px dashed #cbd5e1", height: "26px", margin: "4px 0" }} />
-                    <small>Date: __________________</small>
+                {docSettings?.showSignatureLine !== false && (
+                  <div className="intake-paper-signature" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginTop: "14px" }}>
+                    <div>
+                      <strong>Customer Handover Sign:</strong>
+                      <span style={{ display: "block", borderBottom: "1px dashed #cbd5e1", height: "26px", margin: "4px 0" }} />
+                      <small>Date: __________________</small>
+                    </div>
+                    <div>
+                      <strong>Gate Security Officer:</strong>
+                      <span style={{ display: "block", borderBottom: "1px dashed #cbd5e1", height: "26px", margin: "4px 0" }} />
+                      <small>Sign &amp; Stamp: __________________</small>
+                    </div>
                   </div>
-                  <div>
-                    <strong>Gate Security Officer:</strong>
-                    <span style={{ display: "block", borderBottom: "1px dashed #cbd5e1", height: "26px", margin: "4px 0" }} />
-                    <small>Sign &amp; Stamp: __________________</small>
-                  </div>
-                </div>
+                )}
               </div>
             ) : (
               <>
@@ -3126,11 +3226,13 @@ function NewIntake(props: {
             </section>}
             {step >= 8 && invoicePreviewTab === "Invoice Preview" && step !== 9 && <section className="intake-paper-notes"><h3>Notes</h3><p>{invoiceNotes || "—"}</p></section>}
 
-            {step !== 8 && <div className="intake-paper-signature">
-              <strong>Customer Signature:</strong>
-              <span />
-              <small>Date: __________________</small>
-            </div>}
+            {step !== 8 && docSettings?.showSignatureLine !== false && (
+              <div className="intake-paper-signature">
+                <strong>Customer Signature:</strong>
+                <span />
+                <small>Date: __________________</small>
+              </div>
+            )}
               </>
             )}
           </article>

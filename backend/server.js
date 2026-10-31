@@ -18,6 +18,8 @@ const partRoutes = require('./routes/parts');
 const mechanicRoutes = require('./routes/mechanics');
 const transactionRoutes = require('./routes/transactions');
 const reportRoutes = require('./routes/reports');
+const authRoutes = require('./routes/auth');
+const licenseRoutes = require('./routes/license');
 
 // Connect to MongoDB Atlas
 connectDB();
@@ -47,6 +49,8 @@ app.get('/api/health', (req, res) => {
 });
 
 // ─── API Routes ──────────────────────────────────────────────────────────────
+app.use('/api/auth', authRoutes);
+app.use('/api/license', licenseRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/vehicles', vehicleRoutes);
 app.use('/api/work-orders', workOrderRoutes);

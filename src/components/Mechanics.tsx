@@ -288,7 +288,7 @@ interface MechanicsProps {
 export const Mechanics: React.FC<MechanicsProps> = ({
   notify,
   onAdd: _onAdd,
-  onAssign,
+  onAssign: _onAssign,
   refreshTrigger,
 }) => {
   // Navigation Tab: 'technicians' | 'salary'

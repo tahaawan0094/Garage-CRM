@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   AlertCircle,
 } from "lucide-react";
+import { CustomDropdown } from "./CustomDropdown";
 
 export interface MechanicFormData {
   id?: string;
@@ -76,8 +77,18 @@ export const AddMechanicModal: React.FC<AddMechanicModalProps> = ({
   const [role, setRole] = useState(ROLES[0]);
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
-  const [baseSalary, setBaseSalary] = useState<number>(4500);
-  const [commissionRate, setCommissionRate] = useState<number>(5);
+  const [baseSalary, setBaseSalary] = useState<number>(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem("garage_crm_settings_v1") || "{}");
+      return Number(s.defaultBaseSalary || 4500);
+    } catch (_) { return 4500; }
+  });
+  const [commissionRate, setCommissionRate] = useState<number>(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem("garage_crm_settings_v1") || "{}");
+      return typeof s.defaultCommissionRate === 'number' ? Number(s.defaultCommissionRate) : 5;
+    } catch (_) { return 5; }
+  });
   const [shift, setShift] = useState("Morning");
   const [experience, setExperience] = useState<number>(3);
   const [joiningDate, setJoiningDate] = useState(new Date().toISOString().split("T")[0]);
@@ -103,14 +114,24 @@ export const AddMechanicModal: React.FC<AddMechanicModalProps> = ({
       setEmergencyContact(initialData.emergencyContact || "");
       setNotes(initialData.notes || "");
     } else {
-      // Reset defaults
+      // Reset defaults based on settings
+      let defaultBase = 4500;
+      let defaultComm = 5;
+      try {
+        const savedSettings = localStorage.getItem("garage_crm_settings_v1");
+        if (savedSettings) {
+          const s = JSON.parse(savedSettings);
+          if (s.defaultBaseSalary) defaultBase = Number(s.defaultBaseSalary);
+          if (typeof s.defaultCommissionRate === 'number') defaultComm = Number(s.defaultCommissionRate);
+        }
+      } catch (_) {}
       setName("");
       setNationalId("");
       setRole(ROLES[0]);
       setPhone("");
       setEmail("");
-      setBaseSalary(4500);
-      setCommissionRate(5);
+      setBaseSalary(defaultBase);
+      setCommissionRate(defaultComm);
       setShift("Morning");
       setExperience(3);
       setJoiningDate(new Date().toISOString().split("T")[0]);
@@ -493,28 +514,15 @@ export const AddMechanicModal: React.FC<AddMechanicModalProps> = ({
                   >
                     Specialty / Role *
                   </label>
-                  <select
+                  <CustomDropdown
                     value={role}
-                    onChange={(e) => setRole(e.target.value)}
-                    style={{
-                      width: "100%",
-                      height: "36px",
-                      padding: "0 10px",
-                      border: "1px solid #dfe5ee",
-                      borderRadius: "6px",
-                      fontSize: "12.5px",
-                      color: "#1e293b",
-                      background: "#ffffff",
-                      outline: "none",
-                      boxSizing: "border-box",
-                    }}
-                  >
-                    {ROLES.map((r) => (
-                      <option key={r} value={r}>
-                        {r}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => setRole(val)}
+                    placeholder="Select Role..."
+                    options={ROLES.map((r) => ({
+                      value: r,
+                      label: r,
+                    }))}
+                  />
                 </div>
 
                 <div>
@@ -529,28 +537,15 @@ export const AddMechanicModal: React.FC<AddMechanicModalProps> = ({
                   >
                     Shift
                   </label>
-                  <select
+                  <CustomDropdown
                     value={shift}
-                    onChange={(e) => setShift(e.target.value)}
-                    style={{
-                      width: "100%",
-                      height: "36px",
-                      padding: "0 10px",
-                      border: "1px solid #dfe5ee",
-                      borderRadius: "6px",
-                      fontSize: "12.5px",
-                      color: "#1e293b",
-                      background: "#ffffff",
-                      outline: "none",
-                      boxSizing: "border-box",
-                    }}
-                  >
-                    {SHIFTS.map((s) => (
-                      <option key={s.value} value={s.value}>
-                        {s.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => setShift(val)}
+                    placeholder="Select Shift..."
+                    options={SHIFTS.map((s) => ({
+                      value: s.value,
+                      label: s.label,
+                    }))}
+                  />
                 </div>
 
                 <div>
@@ -597,28 +592,17 @@ export const AddMechanicModal: React.FC<AddMechanicModalProps> = ({
                   >
                     Current Status
                   </label>
-                  <select
+                  <CustomDropdown
                     value={status}
-                    onChange={(e) => setStatus(e.target.value)}
-                    style={{
-                      width: "100%",
-                      height: "36px",
-                      padding: "0 10px",
-                      border: "1px solid #dfe5ee",
-                      borderRadius: "6px",
-                      fontSize: "12.5px",
-                      color: "#1e293b",
-                      background: "#ffffff",
-                      outline: "none",
-                      boxSizing: "border-box",
-                    }}
-                  >
-                    {STATUSES.map((st) => (
-                      <option key={st.value} value={st.value}>
-                        {st.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => setStatus(val)}
+                    placeholder="Select Status..."
+                    options={STATUSES.map((st) => ({
+                      value: st.value,
+                      label: st.label,
+                      badge: st.value === "Available" ? "Free" : st.value === "On Job" ? "Busy" : st.value,
+                      badgeColor: (st.value === "Available" ? "green" : st.value === "On Job" ? "orange" : "blue") as any,
+                    }))}
+                  />
                 </div>
               </div>
             </div>
