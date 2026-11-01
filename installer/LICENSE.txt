@@ -1,0 +1,101 @@
+================================================================================
+GARAGE CRM SUITE - END USER LICENSE AGREEMENT (EULA)
+================================================================================
+Product Name:        GARAGE CRM SUITE (Auto Care & Workshop Operations System)
+Software Version:    1.0.0 (Release Edition)
+Publisher / Vendor:  Vertexia 
+License Model:       Commercial Workshop License (Digital Key Activation)
+================================================================================
+
+IMPORTANT — PLEASE READ CAREFULLY BEFORE INSTALLING OR USING THIS SOFTWARE:
+
+This End User License Agreement ("Agreement" or "EULA") is a legally binding contract
+between you (either an individual workshop owner, registered auto garage business,
+or legal entity, hereinafter "Licensee") and Vertexia Tech Solutions ("Licensor").
+
+By clicking "I Agree", installing, copying, or otherwise using GARAGE CRM SUITE
+("the Software"), you agree to be bound by the terms and conditions of this Agreement.
+If you do not agree to the terms of this Agreement, do not install or use the Software.
+
+--------------------------------------------------------------------------------
+1. GRANT OF LICENSE
+--------------------------------------------------------------------------------
+1.1 Licensor grants to Licensee a non-exclusive, non-transferable commercial license
+    to install and run the Software solely for internal automobile workshop management,
+    vehicle intake logging, parts inventory administration, POS counter billing,
+    technician payroll scheduling, and customer quotation/invoicing operations.
+
+1.2 Single Facility License: Each digital license key is issued for one specific
+    commercial automotive workshop facility or branch unless a multi-branch enterprise
+    expansion license has been formally authorized in writing by Vertexia.
+
+--------------------------------------------------------------------------------
+2. DIGITAL KEY ACTIVATION & CLOUD VERIFICATION
+--------------------------------------------------------------------------------
+2.1 Activation Required: The Software features a secure cloud licensing handshake.
+    Upon first launch, Licensee must enter an authentic License Key registered to
+    their garage business profile.
+2.2 Periodic Synchronization: The Software securely verifies subscription integrity
+    and software activation status against the Atlas Central Licensing Directory.
+2.3 Tampering Prohibited: Any attempt to bypass, disable, forge, or spoof the
+    digital license verification routines constitutes an immediate violation of this
+    Agreement and terminates all operating permissions.
+
+--------------------------------------------------------------------------------
+3. DATA OWNERSHIP & LOCAL STORAGE PRIVACY
+--------------------------------------------------------------------------------
+3.1 Licensee Data Ownership: All customer records, phone numbers, vehicle registration
+    plates, repair job notes, inventory pricing, and financial revenue figures entered
+    into the Software remain the exclusive property of the Licensee.
+3.2 Local & Cloud Redundancy: The Software stores high-speed transaction data locally
+    on the host machine with optional automated cloud sync. Licensor does not sell,
+    disclose, or distribute Licensee's customer records to any third party.
+
+--------------------------------------------------------------------------------
+4. PROHIBITED USES & RESTRICTIONS
+--------------------------------------------------------------------------------
+Licensee shall NOT:
+(a) Modify, reverse engineer, decompile, disassemble, or derive source code from
+    compiled production binaries;
+(b) Sell, rent, lease, sub-license, redistribute, or package the Software as a
+    competing commercial SaaS or downloadable white-label product;
+(c) Remove, obscure, or alter any copyright notices, trademarks, or digital
+    watermarks belonging to Vertexia Tech Solutions.
+
+--------------------------------------------------------------------------------
+5. INTELLECTUAL PROPERTY RIGHTS
+--------------------------------------------------------------------------------
+The Software, including its source code, UI interface design, custom styling,
+database schemas, algorithms, documentation, icons, and branding, is the proprietary
+intellectual property of Vertexia Tech Solutions and is protected by international
+copyright and software property laws.
+
+--------------------------------------------------------------------------------
+6. UPDATES & TECHNICAL SUPPORT
+--------------------------------------------------------------------------------
+Active license holders are entitled to system maintenance updates, security patches,
+and technical support according to their subscribed tier. Major version upgrades
+may be subject to separate terms.
+
+--------------------------------------------------------------------------------
+7. DISCLAIMER OF WARRANTY & LIMITATION OF LIABILITY
+--------------------------------------------------------------------------------
+7.1 TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED
+    "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED.
+7.2 IN NO EVENT SHALL LICENSOR (VERTEXIA) BE LIABLE FOR ANY INCIDENTAL, SPECIAL,
+    CONSEQUENTIAL, OR INDIRECT DAMAGES (INCLUDING LOSS OF PROFITS, DATA LOSS, OR
+    WORKSHOP DOWNTIME) ARISING OUT OF THE USE OR INABILITY TO USE THIS SOFTWARE.
+
+--------------------------------------------------------------------------------
+8. TERMINATION
+--------------------------------------------------------------------------------
+This license is effective until terminated. Your rights under this license will
+terminate automatically without notice if you fail to comply with any of its terms.
+Upon termination, you must cease all use of the Software and remove all copies
+from your workstations and servers.
+
+================================================================================
+Copyright (c) 2026 Vertexia Tech Solutions. All Rights Reserved.
+Garage CRM Suite is a registered software product.
+================================================================================
+

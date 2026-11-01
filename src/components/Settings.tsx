@@ -16,8 +16,14 @@ import {
   Check,
   RefreshCw,
   Sliders,
+  Lock,
+  Eye,
+  EyeOff,
+  X,
+  ShieldAlert,
 } from "lucide-react";
 import { CustomDropdown } from "./CustomDropdown";
+import { authService } from "../services/authService";
 
 export interface GarageSettings {
   // Workshop Profile
@@ -262,39 +268,79 @@ export function SettingsView({ notify }: { notify: (msg: string) => void }) {
     notify("Company logo reset to default.");
   };
 
+  // Security Verification Modal State (Settings require user password to save or reset)
+  const [securityModalOpen, setSecurityModalOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<'save' | 'reset' | null>(null);
+  const [securityPassword, setSecurityPassword] = useState('');
+  const [showSecurityPassword, setShowSecurityPassword] = useState(false);
+  const [securityError, setSecurityError] = useState('');
+  const [verifyingSecurity, setVerifyingSecurity] = useState(false);
+
+  const currentUser = authService.getCurrentUser();
+
   const handleSave = () => {
-    setIsSaving(true);
-    try {
-      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-      localStorage.setItem(SERVICES_STORAGE_KEY, JSON.stringify(services));
-
-      // Dispatch global event so header, documents and invoices immediately update
-      window.dispatchEvent(
-        new CustomEvent("garage-settings-updated", { detail: settings })
-      );
-
-      setSaveSuccess(true);
-      notify("Workshop settings saved and updated successfully.");
-      setTimeout(() => setSaveSuccess(false), 3000);
-    } catch (err: any) {
-      console.error("Failed to save settings:", err);
-      notify(err.message || "Failed to save settings.");
-    } finally {
-      setIsSaving(false);
-    }
+    setPendingAction('save');
+    setSecurityPassword('');
+    setSecurityError('');
+    setSecurityModalOpen(true);
   };
 
   const handleResetDefaults = () => {
-    if (
-      window.confirm(
-        "Are you sure you want to reset all workshop configuration fields to factory defaults?"
-      )
-    ) {
-      setSettings(defaultSettings);
-      setServices(defaultServicesCatalog);
-      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(defaultSettings));
-      localStorage.setItem(SERVICES_STORAGE_KEY, JSON.stringify(defaultServicesCatalog));
-      notify("Settings reset to defaults.");
+    setPendingAction('reset');
+    setSecurityPassword('');
+    setSecurityError('');
+    setSecurityModalOpen(true);
+  };
+
+  const executeVerifiedAction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!securityPassword) {
+      setSecurityError('Please enter your account password to verify.');
+      return;
+    }
+
+    setVerifyingSecurity(true);
+    setSecurityError('');
+
+    try {
+      const isValid = await authService.verifyPassword(securityPassword);
+      if (!isValid) {
+        setSecurityError('Incorrect password! Verification failed. Settings were NOT changed.');
+        setVerifyingSecurity(false);
+        return;
+      }
+
+      // Password verified successfully!
+      if (pendingAction === 'save') {
+        setIsSaving(true);
+        localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+        localStorage.setItem(SERVICES_STORAGE_KEY, JSON.stringify(services));
+
+        window.dispatchEvent(
+          new CustomEvent("garage-settings-updated", { detail: settings })
+        );
+
+        setSaveSuccess(true);
+        notify("Workshop settings verified and updated successfully.");
+        setTimeout(() => setSaveSuccess(false), 3000);
+        setIsSaving(false);
+      } else if (pendingAction === 'reset') {
+        setSettings(defaultSettings);
+        setServices(defaultServicesCatalog);
+        localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(defaultSettings));
+        localStorage.setItem(SERVICES_STORAGE_KEY, JSON.stringify(defaultServicesCatalog));
+        window.dispatchEvent(
+          new CustomEvent("garage-settings-updated", { detail: defaultSettings })
+        );
+        notify("Workshop configuration verified and reset to factory defaults.");
+      }
+
+      setSecurityModalOpen(false);
+      setSecurityPassword('');
+    } catch (err: any) {
+      setSecurityError(err.message || 'Verification error occurred.');
+    } finally {
+      setVerifyingSecurity(false);
     }
   };
 
@@ -1975,6 +2021,236 @@ export function SettingsView({ notify }: { notify: (msg: string) => void }) {
                 <span style={{ fontSize: "10px", color: "#64748b" }}>Production Build</span>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Security Password Verification Dialog */}
+      {securityModalOpen && (
+        <div
+          className="modal-backdrop"
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(15, 23, 42, 0.65)",
+            backdropFilter: "blur(4px)",
+            zIndex: 999999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "16px",
+          }}
+          onClick={() => !verifyingSecurity && setSecurityModalOpen(false)}
+        >
+          <div
+            style={{
+              background: "#ffffff",
+              borderRadius: "14px",
+              width: "100%",
+              maxWidth: "460px",
+              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+              border: "1px solid #e2e8f0",
+              overflow: "hidden",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "16px 20px",
+                borderBottom: "1px solid #e2e8f0",
+                background: "#fafbfc",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div
+                  style={{
+                    width: "36px",
+                    height: "36px",
+                    borderRadius: "9px",
+                    background: "linear-gradient(135deg, #ff631c, #ea580c)",
+                    display: "grid",
+                    placeItems: "center",
+                    color: "#ffffff",
+                    boxShadow: "0 4px 10px rgba(234, 88, 12, 0.25)",
+                  }}
+                >
+                  <Lock size={18} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 700, color: "#17223a" }}>
+                    Security Verification Required
+                  </h3>
+                  <p style={{ margin: "2px 0 0", color: "#667995", fontSize: "10.5px" }}>
+                    {pendingAction === "reset" ? "Resetting configuration" : "Updating workshop settings"}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSecurityModalOpen(false)}
+                disabled={verifyingSecurity}
+                style={{
+                  width: "28px",
+                  height: "28px",
+                  borderRadius: "6px",
+                  border: "1px solid #e2e8f0",
+                  background: "#ffffff",
+                  display: "grid",
+                  placeItems: "center",
+                  cursor: "pointer",
+                  color: "#64748b",
+                }}
+              >
+                <X size={15} />
+              </button>
+            </header>
+
+            <form onSubmit={executeVerifiedAction} style={{ padding: "20px" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  background: "#fff8f3",
+                  border: "1px solid #ffd8c4",
+                  marginBottom: "16px",
+                }}
+              >
+                <ShieldAlert size={20} style={{ color: "#ea580c", flexShrink: 0 }} />
+                <p style={{ margin: 0, fontSize: "11px", color: "#9a3412", lineHeight: 1.45 }}>
+                  Enter your login password (<strong>@{currentUser?.username || "owner"}</strong>) to authorize changes to workshop settings.
+                </p>
+              </div>
+
+              {securityError && (
+                <div
+                  style={{
+                    padding: "9px 12px",
+                    borderRadius: "6px",
+                    background: "#fef2f2",
+                    border: "1px solid #fecaca",
+                    color: "#dc2626",
+                    fontSize: "11.5px",
+                    marginBottom: "14px",
+                    fontWeight: 500,
+                  }}
+                >
+                  {securityError}
+                </div>
+              )}
+
+              <div style={{ marginBottom: "18px" }}>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    color: "#334155",
+                    marginBottom: "6px",
+                  }}
+                >
+                  Account Login Password *
+                </label>
+                <div style={{ position: "relative" }}>
+                  <input
+                    type={showSecurityPassword ? "text" : "password"}
+                    required
+                    autoFocus
+                    value={securityPassword}
+                    onChange={(e) => setSecurityPassword(e.target.value)}
+                    placeholder="Enter your password..."
+                    style={{
+                      width: "100%",
+                      height: "36px",
+                      padding: "0 34px 0 10px",
+                      borderRadius: "6px",
+                      border: "1px solid #cbd5e1",
+                      fontSize: "12px",
+                      color: "#1e293b",
+                      outline: "none",
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowSecurityPassword(!showSecurityPassword)}
+                    style={{
+                      position: "absolute",
+                      right: "8px",
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      background: "none",
+                      border: "none",
+                      color: "#64748b",
+                      cursor: "pointer",
+                      display: "grid",
+                      placeItems: "center",
+                    }}
+                  >
+                    {showSecurityPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "flex-end",
+                  gap: "8px",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setSecurityModalOpen(false)}
+                  disabled={verifyingSecurity}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: "6px",
+                    border: "1px solid #cbd5e1",
+                    background: "#ffffff",
+                    fontSize: "11.5px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    color: "#475569",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={verifyingSecurity}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "8px 18px",
+                    borderRadius: "6px",
+                    border: "none",
+                    background: "linear-gradient(110deg, #ff631c, #f04c08)",
+                    fontSize: "11.5px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    color: "#ffffff",
+                    boxShadow: "0 4px 10px rgba(234, 88, 12, 0.25)",
+                  }}
+                >
+                  {verifyingSecurity ? (
+                    <span>Verifying...</span>
+                  ) : (
+                    <>
+                      <Check size={14} />
+                      <span>{pendingAction === "reset" ? "Authorize Reset" : "Verify & Save Settings"}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

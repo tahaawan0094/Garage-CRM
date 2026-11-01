@@ -65,6 +65,31 @@ export const authService = {
     this.setCurrentUser(null);
   },
 
+  async verifyPassword(password: string): Promise<boolean> {
+    const user = this.getCurrentUser();
+    if (!user || !user.username) return false;
+    try {
+      const res = await fetch(`${API_BASE}/auth/verify-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: user.username, password }),
+      });
+      const data = await res.json();
+      return res.ok && data.verified === true;
+    } catch (_) {
+      try {
+        const res = await fetch(`${API_BASE}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: user.username, password }),
+        });
+        return res.ok;
+      } catch (_) {
+        return false;
+      }
+    }
+  },
+
   async getUsers(): Promise<AuthUser[]> {
     const res = await fetch(`${API_BASE}/auth/users`);
     const data = await res.json();

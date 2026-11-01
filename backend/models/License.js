@@ -18,6 +18,11 @@ const LicenseSchema = new mongoose.Schema(
       default: 'Auto Workshop / Garage',
       trim: true,
     },
+    databaseName: {
+      type: String,
+      trim: true,
+      default: '',
+    },
     ownerName: {
       type: String,
       required: true,

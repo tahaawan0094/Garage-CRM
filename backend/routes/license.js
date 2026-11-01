@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const licenseManager = require('../services/licenseManager');
+const centralDirectory = require('../services/centralDirectory');
 const User = require('../models/User');
 
 const ALL_TABS = [
@@ -40,7 +41,16 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    // 1. Create or update owner user account
+    // 1. Provision new isolated tenant database & register with cloud
+    const registration = await licenseManager.register({
+      businessName,
+      ownerName,
+      phone,
+      email,
+      city,
+    });
+
+    // 2. Create owner user account inside this new tenant database
     const normalizedUsername = username.toLowerCase().trim();
     const { salt, hash } = User.hashPassword(password);
 
@@ -57,14 +67,34 @@ router.post('/register', async (req, res) => {
       isActive: true,
     });
 
-    // 2. Register business with licensing system & cloud
-    const registration = await licenseManager.register({
-      businessName,
-      ownerName,
-      phone,
-      email,
-      city,
-      businessType: 'Auto Workshop / Garage',
+    // 3. Sync workshop profile & owner credentials into MongoDB Atlas Central Directory
+    // This allows the owner & staff to log in from ANY other computer installing this app!
+    await centralDirectory.recordWorkshop({
+      businessId: registration.businessId,
+      businessName: registration.businessName,
+      databaseName: registration.databaseName,
+      ownerName: registration.ownerName,
+      phone: registration.phone,
+      email: registration.email,
+      city: registration.city,
+      businessType: registration.businessType,
+      license: {
+        status: 'ACTIVATION_REQUIRED',
+        licenseType: 'PERMANENT',
+      },
+      companyContact: registration.companyContact,
+    });
+
+    await centralDirectory.recordUser({
+      username: normalizedUsername,
+      fullName: ownerName.trim(),
+      passwordHash: hash,
+      salt,
+      role: 'owner',
+      businessId: registration.businessId,
+      databaseName: registration.databaseName,
+      allowedTabs: ALL_TABS,
+      isActive: true,
     });
 
     const status = await licenseManager.getStatus();
@@ -88,6 +118,18 @@ router.post('/activate', async (req, res) => {
     }
 
     const result = await licenseManager.activate(key);
+
+    // Sync license activation into Central Directory
+    const status = await licenseManager.getStatus();
+    if (status.registration?.businessId) {
+      await centralDirectory.updateWorkshopLicense(status.registration.businessId, {
+        status: status.license.status,
+        licenseType: status.license.license_type,
+        expiresAt: status.license.expires_at,
+        licenseKey: key.trim().toUpperCase(),
+      });
+    }
+
     res.json({
       success: true,
       message: 'License successfully activated!',

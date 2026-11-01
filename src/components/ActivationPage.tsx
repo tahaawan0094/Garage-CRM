@@ -282,6 +282,14 @@ export default function ActivationPage({
               <small className="block text-xs text-[#7a8798] mt-2">
                 {registration.businessName} {registration.city ? `· ${registration.city}` : ''}
               </small>
+              {registration.databaseName && (
+                <div className="mt-2 text-[11px] text-slate-500 flex items-center gap-1.5">
+                  <span className="font-semibold text-slate-600">Atlas Database:</span>
+                  <code className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold">
+                    {registration.databaseName}
+                  </code>
+                </div>
+              )}
             </div>
 
             {/* Company Support Section */}

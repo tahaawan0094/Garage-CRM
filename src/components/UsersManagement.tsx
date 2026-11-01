@@ -1,46 +1,112 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Users,
   ShieldCheck,
   UserPlus,
   Check,
   X,
   Edit2,
   Trash2,
-  AlertCircle,
+  Activity,
+  Search,
+  Phone,
+  Mail,
+  Eye,
+  EyeOff,
+  ChevronLeft,
+  ChevronRight,
+  Database,
+  Layers,
+  Home,
+  ShoppingCart,
+  Plus,
+  Wrench,
+  FileText,
+  CarFront,
+  Users,
+  Box,
+  ChartColumn,
+  Settings,
+  UsersRound,
+  UserCheck,
+  UserRound,
+  type LucideIcon,
 } from 'lucide-react';
 import { authService, type AuthUser, ALL_CRM_TABS } from '../services/authService';
+import { CustomDropdown } from './CustomDropdown';
 
-export default function UsersManagement() {
+const TAB_ICON_MAP: Record<string, LucideIcon> = {
+  'Dashboard': Home,
+  'POS Billing': ShoppingCart,
+  'New Intake': Plus,
+  'Work Orders': Wrench,
+  'Quotations': FileText,
+  'Invoices': FileText,
+  'Vehicles': CarFront,
+  'Customers': Users,
+  'Parts Inventory': Box,
+  'Mechanics': Users,
+  'Reports': ChartColumn,
+  'Settings': Settings,
+};
+
+const getInitials = (name?: string) => {
+  if (!name) return 'U';
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .map(p => p[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+};
+
+interface UsersManagementProps {
+  notify?: (message: string) => void;
+}
+
+export default function UsersManagement({ notify }: UsersManagementProps) {
   const [users, setUsers] = useState<AuthUser[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [_loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState('All Roles');
+  const [statusFilter, setStatusFilter] = useState('All Status');
+  const [selectedId, setSelectedId] = useState<string>('');
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
+  // Modal State
   const [modalOpen, setModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<AuthUser | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const [formData, setFormData] = useState({
     username: '',
     fullName: '',
     password: '',
-    role: 'staff',
+    role: 'staff' as AuthUser['role'],
     phone: '',
     email: '',
-    allowedTabs: ['Dashboard', 'Work Orders'] as string[],
+    allowedTabs: ['Dashboard', 'POS Billing'] as string[],
     isActive: true,
   });
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
 
   const loadUsers = async () => {
     setLoading(true);
     try {
       const data = await authService.getUsers();
       setUsers(data);
+      if (data.length > 0 && !selectedId) {
+        setSelectedId(data[0].id);
+      }
     } catch (_) {
-      // Fallback: at least show owner session if offline
       const current = authService.getCurrentUser();
-      if (current) setUsers([current]);
+      if (current) {
+        setUsers([current]);
+        setSelectedId(current.id);
+      }
     } finally {
       setLoading(false);
     }
@@ -62,8 +128,8 @@ export default function UsersManagement() {
       allowedTabs: ['Dashboard', 'POS Billing'],
       isActive: true,
     });
+    setShowPassword(false);
     setError('');
-    setSuccess('');
     setModalOpen(true);
   };
 
@@ -79,8 +145,8 @@ export default function UsersManagement() {
       allowedTabs: user.allowedTabs || ['Dashboard'],
       isActive: user.isActive !== false,
     });
+    setShowPassword(false);
     setError('');
-    setSuccess('');
     setModalOpen(true);
   };
 
@@ -102,7 +168,7 @@ export default function UsersManagement() {
     setFormData(prev => ({ ...prev, allowedTabs: ['Dashboard'] }));
   };
 
-  const applyPreset = (preset: 'cashier' | 'mechanic' | 'advisor') => {
+  const applyPreset = (preset: 'cashier' | 'mechanic' | 'advisor' | 'all') => {
     if (preset === 'cashier') {
       setFormData(prev => ({
         ...prev,
@@ -121,13 +187,17 @@ export default function UsersManagement() {
         role: 'manager',
         allowedTabs: ['Dashboard', 'New Intake', 'Work Orders', 'Quotations', 'Vehicles', 'Customers'],
       }));
+    } else if (preset === 'all') {
+      setFormData(prev => ({
+        ...prev,
+        allowedTabs: [...ALL_CRM_TABS],
+      }));
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setSuccess('');
 
     if (!formData.fullName.trim() || !formData.username.trim()) {
       setError('Please provide full name and username.');
@@ -148,32 +218,30 @@ export default function UsersManagement() {
     try {
       if (editingUser) {
         await authService.updateUser(editingUser.id, {
-          fullName: formData.fullName,
+          fullName: formData.fullName.trim(),
           role: formData.role,
           allowedTabs: formData.role === 'owner' ? ALL_CRM_TABS : formData.allowedTabs,
           isActive: formData.isActive,
           password: formData.password || undefined,
-          phone: formData.phone,
-          email: formData.email,
+          phone: formData.phone.trim(),
+          email: formData.email.trim(),
         });
-        setSuccess('User updated successfully!');
+        if (notify) notify(`User "${formData.fullName}" updated successfully.`);
       } else {
         await authService.createUser({
-          username: formData.username,
-          fullName: formData.fullName,
+          username: formData.username.trim(),
+          fullName: formData.fullName.trim(),
           password: formData.password,
           role: formData.role,
           allowedTabs: formData.allowedTabs,
-          phone: formData.phone,
-          email: formData.email,
+          phone: formData.phone.trim(),
+          email: formData.email.trim(),
         });
-        setSuccess('New staff user created successfully!');
+        if (notify) notify(`New staff user "${formData.fullName}" created successfully.`);
       }
 
       await loadUsers();
-      setTimeout(() => {
-        setModalOpen(false);
-      }, 800);
+      setModalOpen(false);
     } catch (err: any) {
       setError(err.message || 'Operation failed.');
     } finally {
@@ -186,377 +254,1109 @@ export default function UsersManagement() {
       alert('The Owner account cannot be deleted.');
       return;
     }
-    if (!window.confirm(`Are you sure you want to delete user "${user.fullName}" (${user.username})?`)) {
+    if (!window.confirm(`Are you sure you want to delete user "${user.fullName}" (@${user.username})?`)) {
       return;
     }
 
     try {
       await authService.deleteUser(user.id);
+      if (notify) notify(`User "${user.fullName}" deleted successfully.`);
       await loadUsers();
     } catch (err: any) {
       alert(err.message || 'Failed deleting user.');
     }
   };
 
+  const filteredUsers = useMemo(() => {
+    return users.filter(u => {
+      const term = search.trim().toLowerCase();
+      const matchSearch =
+        `${u.fullName} ${u.username} ${u.phone || ''} ${u.email || ''}`
+          .toLowerCase()
+          .includes(term);
+      if (!matchSearch) return false;
+
+      if (roleFilter !== 'All Roles' && u.role.toLowerCase() !== roleFilter.toLowerCase()) {
+        return false;
+      }
+      if (statusFilter === 'Active' && u.isActive === false) return false;
+      if (statusFilter === 'Inactive' && u.isActive !== false) return false;
+
+      return true;
+    });
+  }, [users, search, roleFilter, statusFilter]);
+
+  const pageCount = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pageUsers = filteredUsers.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const selectedUser =
+    filteredUsers.find(u => u.id === selectedId) ??
+    filteredUsers[0] ??
+    users.find(u => u.id === selectedId) ??
+    users[0];
+
+  const stats = useMemo(() => {
+    return {
+      total: users.length,
+      active: users.filter(u => u.isActive !== false).length,
+      owners: users.filter(u => u.role === 'owner').length,
+      staff: users.filter(u => u.role !== 'owner').length,
+    };
+  }, [users]);
+
   return (
-    <div className="space-y-6">
-      {/* Top Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-orange-50 text-[#f95932] flex items-center justify-center font-bold">
-              <ShieldCheck size={22} />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-slate-900">User Accounts & Role Permissions</h1>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Owner controls staff logins, roles, and allowed CRM sidebar tabs
-              </p>
-            </div>
+    <main className="users-management">
+      {/* Page Header */}
+      <header className="users-page-heading">
+        <div className="users-page-title">
+          <span>
+            <ShieldCheck size={26} />
+          </span>
+          <div>
+            <h1>Staff Users &amp; Role Permissions</h1>
+            <p>Owner controls staff logins, roles, and which sidebar tabs each user can see</p>
           </div>
         </div>
 
-        <button
-          onClick={openAddModal}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#f95932] hover:bg-[#e04a25] text-white font-semibold text-xs transition shadow-md shadow-orange-500/20 cursor-pointer"
-        >
+        <button className="users-create-button" onClick={openAddModal}>
           <UserPlus size={16} />
           <span>Add New Staff User</span>
         </button>
-      </div>
+      </header>
 
-      {/* Users Grid */}
-      {loading ? (
-        <div className="text-center py-12 text-sm text-slate-400">Loading user accounts...</div>
-      ) : users.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-2xl border border-slate-200">
-          <Users size={36} className="mx-auto text-slate-300 mb-2" />
-          <h3 className="font-semibold text-slate-700">No Staff Users Yet</h3>
-          <p className="text-xs text-slate-400 mt-1">Create your first staff login with customized tab permissions.</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {users.map(u => {
-            const isOwner = u.role === 'owner';
-            return (
-              <div
-                key={u.id || u.username}
-                className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm hover:shadow-md transition flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-11 h-11 rounded-xl flex items-center justify-center font-bold text-sm ${
-                          isOwner
-                            ? 'bg-[#f95932] text-white shadow-md shadow-orange-500/25'
-                            : 'bg-slate-100 text-slate-700'
-                        }`}
-                      >
-                        {u.fullName.slice(0, 2).toUpperCase()}
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-slate-900 text-sm">{u.fullName}</h3>
-                        <p className="text-xs text-slate-400">@{u.username}</p>
-                      </div>
-                    </div>
+      {/* KPI Metrics */}
+      <section className="users-metrics" aria-label="Users summary">
+        <article>
+          <span className="users-metric-icon blue">
+            <UsersRound size={20} />
+          </span>
+          <div>
+            <strong>{stats.total}</strong>
+            <small>Total Accounts</small>
+          </div>
+        </article>
+        <article>
+          <span className="users-metric-icon green">
+            <UserCheck size={20} />
+          </span>
+          <div>
+            <strong>{stats.active}</strong>
+            <small>Active Users</small>
+          </div>
+        </article>
+        <article>
+          <span className="users-metric-icon orange">
+            <ShieldCheck size={20} />
+          </span>
+          <div>
+            <strong>{stats.owners}</strong>
+            <small>Owner Admins</small>
+          </div>
+        </article>
+        <article>
+          <span className="users-metric-icon purple">
+            <UserRound size={20} />
+          </span>
+          <div>
+            <strong>{stats.staff}</strong>
+            <small>Staff Logins</small>
+          </div>
+        </article>
+      </section>
 
-                    <span
-                      className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md ${
-                        isOwner
-                          ? 'bg-orange-100 text-[#f95932]'
-                          : u.role === 'manager'
-                          ? 'bg-blue-100 text-blue-700'
-                          : u.role === 'cashier'
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-slate-100 text-slate-600'
-                      }`}
+      {/* 2-Column Split Layout */}
+      <div className="users-management-layout">
+        {/* Left Side: Users List & Filters */}
+        <section className="users-list-card">
+          <div className="users-filters">
+            <label className="users-search">
+              <Search size={15} />
+              <input
+                value={search}
+                onChange={e => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
+                placeholder="Search by staff name, @username, phone..."
+                aria-label="Search users"
+              />
+            </label>
+            <CustomDropdown
+              value={roleFilter}
+              onChange={val => {
+                setRoleFilter(val);
+                setPage(1);
+              }}
+              options={['All Roles', 'Owner', 'Manager', 'Cashier', 'Mechanic', 'Staff']}
+              ariaLabel="Filter by role"
+            />
+            <CustomDropdown
+              value={statusFilter}
+              onChange={val => {
+                setStatusFilter(val);
+                setPage(1);
+              }}
+              options={[
+                { value: 'All Status', label: 'All Status' },
+                { value: 'Active', label: 'Active', badge: 'Active', badgeColor: 'green' },
+                { value: 'Inactive', label: 'Inactive', badge: 'Disabled', badgeColor: 'red' },
+              ]}
+              ariaLabel="Filter by status"
+            />
+          </div>
+
+          <div className="users-table-scroll">
+            <table className="users-management-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Staff User</th>
+                  <th>Role</th>
+                  <th>Contact</th>
+                  <th>Sidebar Access</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageUsers.map((user, idx) => {
+                  const isSelected = selectedUser?.id === user.id;
+                  const initials = getInitials(user.fullName);
+                  const isOwner = user.role === 'owner';
+                  const tabCount = isOwner ? 12 : user.allowedTabs?.length || 0;
+
+                  return (
+                    <tr
+                      key={user.id}
+                      className={isSelected ? 'selected' : ''}
+                      onClick={() => setSelectedId(user.id)}
                     >
-                      {u.role}
-                    </span>
-                  </div>
-
-                  {/* Tabs Access Tag List */}
-                  <div className="mt-4 pt-3 border-t border-slate-100">
-                    <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
-                      <span className="font-semibold">Allowed CRM Tabs:</span>
-                      <span className="text-[11px] font-bold text-[#f95932]">
-                        {isOwner ? 'All 12 Tabs' : `${(u.allowedTabs || []).length} / 12 Tabs`}
-                      </span>
-                    </div>
-
-                    <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
-                      {isOwner ? (
-                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-orange-50 text-[#f95932] font-semibold border border-orange-200/60">
-                          Full Owner Access (All Features)
-                        </span>
-                      ) : (
-                        (u.allowedTabs || []).map(tab => (
+                      <td>{(currentPage - 1) * pageSize + idx + 1}</td>
+                      <td>
+                        <span className="user-name-cell">
                           <span
-                            key={tab}
-                            className="text-[10px] px-2 py-0.5 rounded-md bg-slate-50 text-slate-600 border border-slate-200"
+                            style={{
+                              background: isOwner ? '#fff0e7' : '#eaf3ff',
+                              color: isOwner ? '#f15a24' : '#1478ed',
+                            }}
                           >
-                            {tab}
+                            {initials}
                           </span>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                </div>
+                          <div>
+                            <button
+                              className="user-id-link"
+                              onClick={e => {
+                                e.stopPropagation();
+                                setSelectedId(user.id);
+                              }}
+                            >
+                              {user.fullName}
+                            </button>
+                            <small
+                              style={{
+                                display: 'block',
+                                color: '#718099',
+                                fontSize: '7px',
+                              }}
+                            >
+                              @{user.username}
+                            </small>
+                          </div>
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`user-role-badge ${user.role}`}>
+                          {user.role}
+                        </span>
+                      </td>
+                      <td>
+                        <span style={{ color: '#536682' }}>
+                          {user.phone || user.email || '—'}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="user-tabs-badge">
+                          <Layers size={11} style={{ color: '#f15a24' }} />
+                          <strong>{tabCount} / 12 Tabs</strong>
+                        </span>
+                      </td>
+                      <td>
+                        <span
+                          className={`user-status-badge ${user.isActive !== false ? 'active' : 'inactive'}`}
+                        >
+                          <span
+                            style={{
+                              width: '5px',
+                              height: '5px',
+                              borderRadius: '50%',
+                              backgroundColor: user.isActive !== false ? '#159653' : '#d43b31',
+                            }}
+                          />
+                          {user.isActive !== false ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td>
+                        <div
+                          style={{ display: 'inline-flex', alignItems: 'center' }}
+                          onClick={e => e.stopPropagation()}
+                        >
+                          {isOwner ? (
+                            <span
+                              style={{
+                                fontSize: '7.5px',
+                                color: '#ea580c',
+                                background: '#fff0e7',
+                                padding: '2px 7px',
+                                borderRadius: '4px',
+                                fontWeight: 700,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '3px',
+                              }}
+                              title="Master Owner account cannot be modified or deleted"
+                            >
+                              <ShieldCheck size={11} /> Master
+                            </span>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                className="user-row-action"
+                                title="Edit User & Permissions"
+                                onClick={() => openEditModal(user)}
+                              >
+                                <Edit2 size={12} style={{ color: '#0284c7' }} />
+                              </button>
+                              <button
+                                type="button"
+                                className="user-row-action delete"
+                                title="Delete User"
+                                onClick={() => handleDelete(user)}
+                              >
+                                <Trash2 size={12} style={{ color: '#e11d48' }} />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
 
-                {/* Actions */}
-                <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-                  <span
-                    className={`inline-flex items-center gap-1 font-semibold ${
-                      u.isActive !== false ? 'text-emerald-600' : 'text-red-500'
-                    }`}
-                  >
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full ${
-                        u.isActive !== false ? 'bg-emerald-500' : 'bg-red-500'
-                      }`}
-                    />
-                    <span>{u.isActive !== false ? 'Active Account' : 'Disabled'}</span>
-                  </span>
+                {filteredUsers.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="users-empty">
+                      No staff accounts match your search or filter.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
 
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => openEditModal(u)}
-                      className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition"
-                      title="Edit User Permissions"
-                    >
-                      <Edit2 size={14} />
-                    </button>
-                    {!isOwner && (
-                      <button
-                        onClick={() => handleDelete(u)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition"
-                        title="Delete User"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Modal: Add or Edit Staff User */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
-            
-            {/* Modal Header */}
-            <div className="p-5 border-b border-slate-150 flex items-center justify-between bg-slate-50/50">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-orange-100 text-[#f95932] flex items-center justify-center">
-                  <UserPlus size={18} />
-                </div>
-                <div>
-                  <h3 className="font-bold text-slate-900 text-sm">
-                    {editingUser ? `Edit User: ${editingUser.fullName}` : 'Create New Staff User'}
-                  </h3>
-                  <p className="text-xs text-slate-400">Set credentials & select visible sidebar tabs</p>
-                </div>
-              </div>
+          <footer className="users-table-footer">
+            <span>
+              Showing {filteredUsers.length ? (currentPage - 1) * pageSize + 1 : 0} to{' '}
+              {Math.min(currentPage * pageSize, filteredUsers.length)} of {filteredUsers.length} accounts
+            </span>
+            <div>
               <button
-                onClick={() => setModalOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+                aria-label="Previous page"
+                disabled={currentPage === 1}
+                onClick={() => setPage(currentPage - 1)}
               >
-                <X size={18} />
+                <ChevronLeft size={16} />
+              </button>
+              {Array.from({ length: pageCount }, (_, index) => index + 1).map(pageNumber => (
+                <button
+                  key={pageNumber}
+                  className={currentPage === pageNumber ? 'active' : ''}
+                  onClick={() => setPage(pageNumber)}
+                >
+                  {pageNumber}
+                </button>
+              ))}
+              <button
+                aria-label="Next page"
+                disabled={currentPage === pageCount}
+                onClick={() => setPage(currentPage + 1)}
+              >
+                <ChevronRight size={16} />
               </button>
             </div>
+          </footer>
+        </section>
+
+        {/* Right Side: User Inspector & Tabs Permissions Card */}
+        {selectedUser && (
+          <aside className="user-detail-card" aria-label={`User details for ${selectedUser.username}`}>
+            <header>
+              <div>
+                <ShieldCheck size={16} />
+                <strong>Staff User Details</strong>
+              </div>
+              {selectedUser.role === 'owner' ? (
+                <span
+                  style={{
+                    fontSize: '8px',
+                    color: '#ea580c',
+                    background: '#fff0e7',
+                    padding: '2px 7px',
+                    borderRadius: '4px',
+                    fontWeight: 700,
+                  }}
+                >
+                  Root Owner
+                </span>
+              ) : (
+                <button type="button" onClick={() => openEditModal(selectedUser)}>
+                  Edit User
+                </button>
+              )}
+            </header>
+
+            <div className="user-detail-heading">
+              <span
+                className="user-large-avatar"
+                style={{
+                  background: selectedUser.role === 'owner' ? '#fff0e7' : '#eaf3ff',
+                  color: selectedUser.role === 'owner' ? '#f15a24' : '#1478ed',
+                }}
+              >
+                {getInitials(selectedUser.fullName)}
+              </span>
+              <div>
+                <strong>{selectedUser.fullName}</strong>
+                <span>@{selectedUser.username}</span>
+              </div>
+              <span className={`user-role-badge ${selectedUser.role}`}>
+                {selectedUser.role}
+              </span>
+            </div>
+
+            <div className="user-detail-facts">
+              <div>
+                <Phone size={14} />
+                <span>Phone:</span>
+                <strong>{selectedUser.phone || 'Not set'}</strong>
+              </div>
+              <div>
+                <Mail size={14} />
+                <span>Email:</span>
+                <strong>{selectedUser.email || 'Not set'}</strong>
+              </div>
+              <div>
+                <ShieldCheck size={14} />
+                <span>Account Role:</span>
+                <strong className="capitalize">{selectedUser.role}</strong>
+              </div>
+              <div>
+                <Check size={14} />
+                <span>Status:</span>
+                <strong>{selectedUser.isActive !== false ? 'Active' : 'Inactive'}</strong>
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <Database size={14} />
+                <span>Directory Sync:</span>
+                <strong style={{ color: '#159653' }}>Atlas Cloud Verified</strong>
+              </div>
+            </div>
+
+            {/* Sidebar Tabs Breakdown Section */}
+            <div className="user-permissions-section">
+              <h3>
+                <Layers size={14} />
+                <span>Granted Navigation Tabs</span>
+                <span className="badge">
+                  {selectedUser.role === 'owner' ? 12 : selectedUser.allowedTabs?.length || 0} / 12
+                </span>
+              </h3>
+
+              {selectedUser.role === 'owner' ? (
+                <div
+                  style={{
+                    padding: '8px 10px',
+                    borderRadius: '6px',
+                    background: '#fff8f3',
+                    border: '1px solid #ffd8c4',
+                    color: '#c2410c',
+                    fontSize: '8px',
+                    lineHeight: '1.45',
+                    marginBottom: '8px',
+                  }}
+                >
+                  <strong>Full Master Access:</strong> Owner has full control over all 12 modules including Users &amp; Roles and Settings.
+                </div>
+              ) : null}
+
+              <div className="user-tabs-pill-grid">
+                {ALL_CRM_TABS.map(tabName => {
+                  const Icon = TAB_ICON_MAP[tabName] || Box;
+                  const isGranted =
+                    selectedUser.role === 'owner' ||
+                    selectedUser.allowedTabs?.includes(tabName);
+
+                  return (
+                    <div
+                      key={tabName}
+                      className={`user-tab-pill ${isGranted ? 'granted' : 'locked'}`}
+                      title={isGranted ? `${tabName} is visible` : `${tabName} is hidden`}
+                    >
+                      <Icon size={12} />
+                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {tabName}
+                      </span>
+                      {isGranted ? (
+                        <Check size={11} style={{ flexShrink: 0 }} />
+                      ) : (
+                        <X size={11} style={{ flexShrink: 0 }} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="user-detail-actions">
+              {selectedUser.role === 'owner' ? (
+                <div
+                  style={{
+                    gridColumn: '1 / -1',
+                    padding: '9px 12px',
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '6px',
+                    fontSize: '9px',
+                    color: '#64748b',
+                    textAlign: 'center',
+                    lineHeight: 1.4,
+                  }}
+                >
+                  <ShieldCheck size={13} style={{ display: 'inline', verticalAlign: '-2px', color: '#ea580c', marginRight: '5px' }} />
+                  <strong>Master Owner Account:</strong> Permanent root account. Protected against modifications and deletions.
+                </div>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() => openEditModal(selectedUser)}
+                  >
+                    <Edit2 size={13} />
+                    <span>Edit Permissions</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="danger"
+                    onClick={() => handleDelete(selectedUser)}
+                  >
+                    <Trash2 size={13} />
+                    <span>Delete User</span>
+                  </button>
+                </>
+              )}
+            </div>
+          </aside>
+        )}
+      </div>
+
+      {/* ========================================================================= */}
+      {/* MODAL: ADD / EDIT STAFF USER (Identical CRM Dialog Design)               */}
+      {/* ========================================================================= */}
+      {modalOpen && (
+        <div
+          className="modal-backdrop"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 999999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+          }}
+          onClick={() => !busy && setModalOpen(false)}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '14px',
+              width: '100%',
+              maxWidth: '680px',
+              maxHeight: '92vh',
+              overflowY: 'auto',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              border: '1px solid #e2e8f0',
+              color: '#14213a',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <header
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '16px 20px',
+                borderBottom: '1px solid #e2e8f0',
+                background: '#fafbfc',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '10px',
+                    background: 'linear-gradient(135deg, #ff631c, #ea580c)',
+                    display: 'grid',
+                    placeItems: 'center',
+                    color: '#ffffff',
+                    boxShadow: '0 4px 12px rgba(234, 88, 12, 0.25)',
+                  }}
+                >
+                  <ShieldCheck size={20} />
+                </div>
+                <div>
+                  <h2
+                    style={{
+                      margin: 0,
+                      fontSize: '16px',
+                      fontWeight: 700,
+                      color: '#17223a',
+                    }}
+                  >
+                    {editingUser ? 'Edit Staff User Account' : 'Add New Staff User Account'}
+                  </h2>
+                  <p style={{ margin: '2px 0 0', color: '#667995', fontSize: '11px' }}>
+                    Configure login credentials and select visible CRM sidebar navigation tabs
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setModalOpen(false)}
+                disabled={busy}
+                style={{
+                  width: '30px',
+                  height: '30px',
+                  borderRadius: '6px',
+                  border: '1px solid #e2e8f0',
+                  background: '#ffffff',
+                  display: 'grid',
+                  placeItems: 'center',
+                  cursor: 'pointer',
+                  color: '#64748b',
+                }}
+              >
+                <X size={16} />
+              </button>
+            </header>
 
             {/* Modal Form */}
-            <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+            <form onSubmit={handleSubmit} style={{ padding: '20px' }}>
               {error && (
-                <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-600 text-xs flex items-center gap-2">
-                  <AlertCircle size={15} />
-                  <span>{error}</span>
-                </div>
-              )}
-              {success && (
-                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-600 text-xs flex items-center gap-2">
-                  <Check size={15} />
-                  <span>{success}</span>
+                <div
+                  style={{
+                    padding: '9px 12px',
+                    borderRadius: '6px',
+                    background: '#fef2f2',
+                    border: '1px solid #fecaca',
+                    color: '#dc2626',
+                    fontSize: '11.5px',
+                    marginBottom: '16px',
+                  }}
+                >
+                  {error}
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              {/* Account Basic Info Grid */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                  gap: '12px',
+                  marginBottom: '16px',
+                }}
+              >
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name *</label>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      color: '#334155',
+                      marginBottom: '4px',
+                    }}
+                  >
+                    Full Name *
+                  </label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Tariq Mehmood"
                     value={formData.fullName}
                     onChange={e => setFormData({ ...formData, fullName: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-slate-900 text-xs focus:outline-none focus:border-[#f95932]"
+                    placeholder="e.g. Tariq Khan"
+                    style={{
+                      width: '100%',
+                      height: '34px',
+                      padding: '0 10px',
+                      borderRadius: '6px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '11.5px',
+                      color: '#1e293b',
+                      outline: 'none',
+                    }}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Username *</label>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      color: '#334155',
+                      marginBottom: '4px',
+                    }}
+                  >
+                    Username (Login ID) *
+                  </label>
                   <input
                     type="text"
                     required
                     disabled={Boolean(editingUser)}
-                    placeholder="e.g. cashier1"
                     value={formData.username}
-                    onChange={e => setFormData({ ...formData, username: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-slate-900 text-xs focus:outline-none focus:border-[#f95932] disabled:bg-slate-100"
+                    onChange={e =>
+                      setFormData({ ...formData, username: e.target.value.toLowerCase().replace(/\s+/g, '') })
+                    }
+                    placeholder="e.g. tariq_cashier"
+                    style={{
+                      width: '100%',
+                      height: '34px',
+                      padding: '0 10px',
+                      borderRadius: '6px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '11.5px',
+                      color: '#1e293b',
+                      outline: 'none',
+                      backgroundColor: editingUser ? '#f1f5f9' : '#ffffff',
+                    }}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    {editingUser ? 'New Password (leave blank to keep current)' : 'Password *'}
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      color: '#334155',
+                      marginBottom: '4px',
+                    }}
+                  >
+                    {editingUser ? 'Password (leave blank to keep unchanged)' : 'Password *'}
                   </label>
-                  <input
-                    type="password"
-                    placeholder="••••••••"
-                    value={formData.password}
-                    onChange={e => setFormData({ ...formData, password: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-slate-900 text-xs focus:outline-none focus:border-[#f95932]"
-                  />
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required={!editingUser}
+                      value={formData.password}
+                      onChange={e => setFormData({ ...formData, password: e.target.value })}
+                      placeholder={editingUser ? '••••••••' : 'Min. 4 characters'}
+                      style={{
+                        width: '100%',
+                        height: '34px',
+                        padding: '0 34px 0 10px',
+                        borderRadius: '6px',
+                        border: '1px solid #cbd5e1',
+                        fontSize: '11.5px',
+                        color: '#1e293b',
+                        outline: 'none',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      style={{
+                        position: 'absolute',
+                        right: '8px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'none',
+                        border: 'none',
+                        color: '#64748b',
+                        cursor: 'pointer',
+                        display: 'grid',
+                        placeItems: 'center',
+                      }}
+                    >
+                      {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Assigned Role</label>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      color: '#334155',
+                      marginBottom: '4px',
+                    }}
+                  >
+                    Role *
+                  </label>
                   <select
                     value={formData.role}
-                    onChange={e => setFormData({ ...formData, role: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-slate-900 text-xs focus:outline-none focus:border-[#f95932]"
+                    disabled={editingUser?.role === 'owner'}
+                    onChange={e => setFormData({ ...formData, role: e.target.value as any })}
+                    style={{
+                      width: '100%',
+                      height: '34px',
+                      padding: '0 10px',
+                      borderRadius: '6px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '11.5px',
+                      color: '#1e293b',
+                      outline: 'none',
+                      backgroundColor: '#ffffff',
+                    }}
                   >
-                    <option value="cashier">Cashier</option>
-                    <option value="mechanic">Mechanic / Technician</option>
-                    <option value="manager">Service Manager</option>
-                    <option value="staff">General Staff</option>
-                    {editingUser?.role === 'owner' && <option value="owner">Owner (Master Admin)</option>}
+                    <option value="manager">Manager (Service Advisor)</option>
+                    <option value="cashier">Cashier (Billing &amp; Invoices)</option>
+                    <option value="mechanic">Mechanic (Job Cards &amp; Inventory)</option>
+                    <option value="staff">Staff (Standard)</option>
+                    {editingUser?.role === 'owner' && <option value="owner">Owner (Administrator)</option>}
                   </select>
+                </div>
+
+                <div>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      color: '#334155',
+                      marginBottom: '4px',
+                    }}
+                  >
+                    Phone / WhatsApp (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.phone}
+                    onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                    placeholder="e.g. +974 5512 3456"
+                    style={{
+                      width: '100%',
+                      height: '34px',
+                      padding: '0 10px',
+                      borderRadius: '6px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '11.5px',
+                      color: '#1e293b',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      color: '#334155',
+                      marginBottom: '4px',
+                    }}
+                  >
+                    Email Address (Optional)
+                  </label>
+                  <input
+                    type="email"
+                    value={formData.email}
+                    onChange={e => setFormData({ ...formData, email: e.target.value })}
+                    placeholder="e.g. staff@garage.com"
+                    style={{
+                      width: '100%',
+                      height: '34px',
+                      padding: '0 10px',
+                      borderRadius: '6px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '11.5px',
+                      color: '#1e293b',
+                      outline: 'none',
+                    }}
+                  />
                 </div>
               </div>
 
-              {/* Role Presets */}
-              <div className="pt-2">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                    Allowed CRM Tabs Checklist
+              {/* Active Account Switch */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '9px 12px',
+                  borderRadius: '8px',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  marginBottom: '16px',
+                }}
+              >
+                <div>
+                  <strong style={{ fontSize: '11.5px', color: '#1e293b' }}>Active Login Status</strong>
+                  <p style={{ margin: 0, fontSize: '10px', color: '#64748b' }}>
+                    When disabled, this user will be blocked from logging into the CRM system
+                  </p>
+                </div>
+                <label style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={formData.isActive}
+                    disabled={editingUser?.role === 'owner'}
+                    onChange={e => setFormData({ ...formData, isActive: e.target.checked })}
+                    style={{ width: '16px', height: '16px', accentColor: '#f15a24' }}
+                  />
+                  <span style={{ marginLeft: '6px', fontSize: '11px', fontWeight: 600 }}>
+                    {formData.isActive ? 'Active' : 'Disabled'}
                   </span>
-                  <div className="flex items-center gap-2">
+                </label>
+              </div>
+
+              {/* Role Presets & 12 CRM Tabs Selection */}
+              <div style={{ marginBottom: '16px' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '8px',
+                    marginBottom: '8px',
+                  }}
+                >
+                  <div>
+                    <label style={{ fontSize: '11.5px', fontWeight: 700, color: '#334155' }}>
+                      Visible Sidebar Navigation Tabs ({formData.allowedTabs.length} / 12)
+                    </label>
+                    <span style={{ display: 'block', fontSize: '10px', color: '#64748b' }}>
+                      Select which modules this user can see and access in the left sidebar
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <button
+                      type="button"
+                      onClick={() => applyPreset('cashier')}
+                      style={{
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        border: '1px solid #cbd5e1',
+                        background: '#ffffff',
+                        fontSize: '9.5px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        color: '#334155',
+                      }}
+                    >
+                      Cashier Preset
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applyPreset('mechanic')}
+                      style={{
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        border: '1px solid #cbd5e1',
+                        background: '#ffffff',
+                        fontSize: '9.5px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        color: '#334155',
+                      }}
+                    >
+                      Mechanic Preset
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applyPreset('advisor')}
+                      style={{
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        border: '1px solid #cbd5e1',
+                        background: '#ffffff',
+                        fontSize: '9.5px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        color: '#334155',
+                      }}
+                    >
+                      Advisor Preset
+                    </button>
                     <button
                       type="button"
                       onClick={selectAllTabs}
-                      className="text-[11px] font-semibold text-[#f95932] hover:underline"
+                      style={{
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        border: '1px solid #ffd8c4',
+                        background: '#fff0e7',
+                        fontSize: '9.5px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        color: '#ea580c',
+                      }}
                     >
-                      Select All
+                      All Tabs
                     </button>
-                    <span className="text-slate-300">|</span>
                     <button
                       type="button"
                       onClick={clearAllTabs}
-                      className="text-[11px] font-semibold text-slate-500 hover:underline"
+                      style={{
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        border: '1px solid #e2e8f0',
+                        background: '#f8fafc',
+                        fontSize: '9.5px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        color: '#64748b',
+                      }}
                     >
                       Reset
                     </button>
                   </div>
                 </div>
 
-                {/* Quick Presets */}
-                <div className="flex flex-wrap items-center gap-1.5 mb-2.5">
-                  <span className="text-[11px] text-slate-400">Quick presets:</span>
-                  <button
-                    type="button"
-                    onClick={() => applyPreset('cashier')}
-                    className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
-                  >
-                    Cashier Preset
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyPreset('mechanic')}
-                    className="px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
-                  >
-                    Mechanic Preset
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyPreset('advisor')}
-                    className="px-2 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100"
-                  >
-                    Advisor Preset
-                  </button>
-                </div>
+                {/* 12 Tabs Checkbox Cards Grid */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                    gap: '6px',
+                  }}
+                >
+                  {ALL_CRM_TABS.map(tabName => {
+                    const Icon = TAB_ICON_MAP[tabName] || Box;
+                    const isChecked = formData.allowedTabs.includes(tabName);
 
-                {/* Checklist Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3 rounded-xl bg-slate-50 border border-slate-200">
-                  {ALL_CRM_TABS.map(tab => {
-                    const isChecked = formData.allowedTabs.includes(tab);
                     return (
-                      <label
-                        key={tab}
-                        className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer select-none transition ${
-                          isChecked
-                            ? 'bg-orange-50 border-[#f95932]/40 text-[#f95932] font-semibold'
-                            : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
-                        }`}
+                      <div
+                        key={tabName}
+                        onClick={() => toggleTab(tabName)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '7px 9px',
+                          borderRadius: '6px',
+                          border: isChecked ? '1px solid #ea580c' : '1px solid #e2e8f0',
+                          background: isChecked ? '#fff7ed' : '#ffffff',
+                          cursor: 'pointer',
+                          userSelect: 'none',
+                          transition: 'all 0.15s ease',
+                        }}
                       >
                         <input
                           type="checkbox"
                           checked={isChecked}
-                          onChange={() => toggleTab(tab)}
-                          className="w-3.5 h-3.5 text-[#f95932] rounded focus:ring-0"
+                          onChange={() => {}} // Handled by div click
+                          style={{ accentColor: '#ea580c' }}
                         />
-                        <span className="truncate">{tab}</span>
-                      </label>
+                        <Icon
+                          size={14}
+                          style={{
+                            color: isChecked ? '#ea580c' : '#64748b',
+                            flexShrink: 0,
+                          }}
+                        />
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            fontWeight: isChecked ? 700 : 500,
+                            color: isChecked ? '#9a3412' : '#334155',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          {tabName}
+                        </span>
+                      </div>
                     );
                   })}
                 </div>
               </div>
 
-              {/* Active Toggle */}
-              {editingUser && editingUser.role !== 'owner' && (
-                <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                  <div>
-                    <span className="font-semibold text-slate-800">Account Status</span>
-                    <p className="text-[11px] text-slate-500">Allow this user to sign into the system</p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={formData.isActive}
-                      onChange={e => setFormData({ ...formData, isActive: e.target.checked })}
-                      className="sr-only peer"
-                    />
-                    <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#f95932]"></div>
-                  </label>
-                </div>
-              )}
-
-              {/* Submit Button */}
-              <div className="pt-2 flex items-center justify-end gap-2">
+              {/* Modal Footer Actions */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'flex-end',
+                  gap: '10px',
+                  paddingTop: '16px',
+                  borderTop: '1px solid #e2e8f0',
+                }}
+              >
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition"
+                  disabled={busy}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    border: '1px solid #cbd5e1',
+                    background: '#ffffff',
+                    fontSize: '11.5px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    color: '#475569',
+                  }}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={busy}
-                  className="px-5 py-2.5 rounded-xl text-xs font-semibold text-white bg-[#f95932] hover:bg-[#e04a25] transition shadow-md shadow-orange-500/20 disabled:opacity-60"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 20px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: 'linear-gradient(110deg, #ff631c, #f04c08)',
+                    fontSize: '11.5px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    color: '#ffffff',
+                    boxShadow: '0 4px 12px rgba(234, 88, 12, 0.25)',
+                  }}
                 >
-                  {busy ? 'Saving...' : editingUser ? 'Update User' : 'Create User'}
+                  {busy ? (
+                    <span>Saving Account...</span>
+                  ) : (
+                    <>
+                      <Check size={14} />
+                      <span>{editingUser ? 'Save Changes' : 'Create Staff User'}</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
-    </div>
+    </main>
   );
 }

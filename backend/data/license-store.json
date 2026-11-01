@@ -1,19 +1,20 @@
 {
   "registration": {
-    "businessId": "biz_gar_mvwfq0iu_1eb859c7",
-    "businessName": "GARAGE DUBAI",
-    "businessType": "Auto Workshop / Garage",
+    "businessId": "biz_gar_mvxp6dh5_be02f35e",
+    "businessName": "TAHA",
+    "businessType": "Auto Workshop / Garage [DB: garage_taha_be02f35e]",
+    "databaseName": "garage_taha_be02f35e",
     "ownerName": "TAHA",
-    "phone": "218098191",
+    "phone": "1281820912",
     "email": "",
-    "city": "DUBAI",
+    "city": "Karachi",
     "status": "ACTIVE",
     "licenseType": "DATED",
-    "expiresAt": "2027-11-02T23:59:59.999Z",
-    "licenseKey": "MK-245C8C81-6174B958-CD67A390-60600E31",
-    "keyHash": "8e3c6e9c55abc3fbaf7c3048533d90aa25e70645b12bd1dba99b0b5ae18fc9bb",
-    "receipt": "eyJ2ZXJzaW9uIjoxLCJwcm9kdWN0IjoibWVka2l0LXBvcyIsImJ1c2luZXNzSWQiOiJiaXpfZ2FyX212d2ZxMGl1XzFlYjg1OWM3IiwiZGV2aWNlSWQiOiJmMDQwNzE0ZTMxMzdlOTI0MmY3NDMzY2NhNmI1NmQ3N2IyNDIwYTcwMDY1MjRkMmUwODUwMDJlYWIxMzgzZDk0IiwibGljZW5zZUlkIjoiYTNiNjRlMDAtZDJlMy00ZGVlLTljZGYtOTdhNzMxZjkwZjBmIiwic3RhdHVzIjoiQUNUSVZFIiwiaXNzdWVkQXQiOjE3OTM0NTUwNzk4NzEsInBlcm1hbmVudCI6ZmFsc2UsImV4cGlyZXNBdCI6MTgyNTE5OTk5OTk5OSwib2ZmbGluZVVudGlsIjoxNzk0MDU5ODc5ODcxLCJjb21wYW55TmFtZSI6IlZlcnRleGlhIn0.FNGas86df2cIGF25ayxev4erqcFuqiIO3M2KbX9aBdP1FKhJBfGnoWFYvI48ArmR49Oey51vrkk5jTsr9OKEAw",
-    "activatedAt": "2026-10-31T13:58:00.388Z",
-    "lastVerifiedAt": "2026-10-31T13:58:00.388Z"
+    "expiresAt": "2027-11-03T23:59:59.999Z",
+    "licenseKey": "MK-3D23E5C9-B6107AE8-A92307CA-90D61109",
+    "keyHash": "29b09af2644437179a96e4e28a035157f897e992b689ff43fe9aeb3d18e4fd69",
+    "receipt": "eyJ2ZXJzaW9uIjoxLCJwcm9kdWN0IjoibWVka2l0LXBvcyIsImJ1c2luZXNzSWQiOiJiaXpfZ2FyX212eHA2ZGg1X2JlMDJmMzVlIiwiZGV2aWNlSWQiOiJmMDQwNzE0ZTMxMzdlOTI0MmY3NDMzY2NhNmI1NmQ3N2IyNDIwYTcwMDY1MjRkMmUwODUwMDJlYWIxMzgzZDk0IiwibGljZW5zZUlkIjoiOWQ0YTZkYjUtMjlhYS00ZjJlLWE0MDYtYTA5MDRlNGEyMjhkIiwic3RhdHVzIjoiQUNUSVZFIiwiaXNzdWVkQXQiOjE3OTM1Mjk1NTcxNzIsInBlcm1hbmVudCI6ZmFsc2UsImV4cGlyZXNBdCI6MTgyNTI4NjM5OTk5OSwib2ZmbGluZVVudGlsIjoxNzk0MTM0MzU3MTcyLCJjb21wYW55TmFtZSI6IlZlcnRleGlhIn0.Q4kwFnszvBPrjsmpDSsF2ktJwDmD1ynieb13AYhXw7tkbBkTX0ArtmyNheIEzrF9pK_0mqmMF4vUESwjOhHwCg",
+    "activatedAt": "2026-11-01T10:39:18.213Z",
+    "lastVerifiedAt": "2026-11-01T10:39:18.213Z"
   }
 }

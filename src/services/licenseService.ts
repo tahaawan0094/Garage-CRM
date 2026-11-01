@@ -22,6 +22,7 @@ export interface BusinessRegistration {
   businessId: string;
   businessName: string;
   businessType: string;
+  databaseName?: string;
   ownerName: string;
   phone: string;
   email?: string;

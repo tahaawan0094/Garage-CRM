@@ -16,9 +16,10 @@ import { licenseService, type BusinessRegistration } from '../services/licenseSe
 
 interface RegistrationPageProps {
   onRegistered: (registration: BusinessRegistration) => void;
+  onGoToLogin?: () => void;
 }
 
-export default function RegistrationPage({ onRegistered }: RegistrationPageProps) {
+export default function RegistrationPage({ onRegistered, onGoToLogin }: RegistrationPageProps) {
   const [formData, setFormData] = useState({
     businessName: '',
     ownerName: '',
@@ -89,9 +90,21 @@ export default function RegistrationPage({ onRegistered }: RegistrationPageProps
               <span className="text-xs text-slate-500">Workshop Registration &amp; Setup</span>
             </div>
           </div>
-          <span className="text-xs font-semibold px-3 py-1 rounded-full bg-orange-50 text-[#f95932] border border-orange-200/60 w-fit">
-            First-Time Installation Setup
-          </span>
+          <div className="flex items-center gap-2.5">
+            {onGoToLogin && (
+              <button
+                type="button"
+                onClick={onGoToLogin}
+                className="text-xs font-semibold px-3.5 py-1.5 rounded-xl border border-slate-200 text-slate-700 hover:border-[#f95932] hover:text-[#f95932] transition cursor-pointer flex items-center gap-1.5"
+              >
+                <User size={13} />
+                <span>Existing Workshop? Sign In →</span>
+              </button>
+            )}
+            <span className="text-xs font-semibold px-3 py-1 rounded-full bg-orange-50 text-[#f95932] border border-orange-200/60 w-fit">
+              Installation Setup
+            </span>
+          </div>
         </div>
       </header>
 

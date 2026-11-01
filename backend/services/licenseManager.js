@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const { hash, DAY, createProof, decodeSigned, deviceIdFor } = require('./licenseProtocol');
 const License = require('../models/License');
+const { getTenantDatabaseName, switchDatabase } = require('../config/db');
 
 const CLOUD_API_URL = process.env.MEDKIT_CLOUD_API_URL || 'https://iaqevipmygglullkzzsf.supabase.co/functions/v1/medkit-api';
 const COMPANY_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
@@ -156,6 +157,7 @@ class LicenseManager {
         businessId: reg.businessId,
         businessName: reg.businessName,
         businessType: reg.businessType || 'Auto Workshop / Garage',
+        databaseName: reg.databaseName || '',
         ownerName: reg.ownerName,
         phone: reg.phone,
         email: reg.email,
@@ -188,10 +190,22 @@ class LicenseManager {
 
   async register(formData) {
     const businessId = `biz_gar_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`;
+    const databaseName = getTenantDatabaseName(formData.businessName, businessId);
+
+    // 1. Switch MongoDB connection pool to this brand new isolated tenant database
+    try {
+      await switchDatabase(databaseName);
+    } catch (err) {
+      console.warn('[LICENSE] Warning: MongoDB switch database failed, will retry:', err.message);
+    }
+
+    const businessTypeFormatted = `Auto Workshop / Garage [DB: ${databaseName}]`;
+
     const record = {
       businessId,
       businessName: formData.businessName.trim(),
-      businessType: formData.businessType || 'Auto Workshop / Garage',
+      businessType: businessTypeFormatted,
+      databaseName,
       ownerName: formData.ownerName.trim(),
       phone: formData.phone.trim(),
       email: (formData.email || '').trim(),
@@ -209,10 +223,10 @@ class LicenseManager {
       },
     };
 
-    // Save in Local File Store
+    // 2. Save in Local File Store
     this.persistLocalStore({ registration: record });
 
-    // Save in MongoDB if available
+    // 3. Save License in newly provisioned MongoDB database
     try {
       await License.deleteMany({});
       await License.create(record);
@@ -220,7 +234,7 @@ class LicenseManager {
       console.warn('[LICENSE] MongoDB save warning:', err.message);
     }
 
-    // Call Cloud API so client appears on https://medkit-pos.web.app/
+    // 4. Call Cloud API so client appears on https://medkit-pos.web.app/
     const cloudRes = await this.callCloudApi('register', {
       businessId,
       businessName: record.businessName,
@@ -228,7 +242,8 @@ class LicenseManager {
       phone: record.phone,
       email: record.email,
       city: record.city,
-      businessType: record.businessType,
+      businessType: businessTypeFormatted,
+      databaseName,
     });
 
     if (cloudRes.ok && cloudRes.data?.contact) {
@@ -356,6 +371,9 @@ class LicenseManager {
     writeJsonFile(LOCAL_STORE_PATH, {});
     try {
       await License.deleteMany({});
+    } catch (_) {}
+    try {
+      await switchDatabase('garage_system_master');
     } catch (_) {}
     return await this.getStatus();
   }

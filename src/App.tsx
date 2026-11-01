@@ -1,5 +1,38 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, ArrowUp, Bell, Box, CalendarDays, CarFront, ChartColumn, Check, ChevronDown, CircleHelp, Clock3, FileText, Headset, Home, Lock, LogOut, Menu, MoreHorizontal, Plus, RotateCcw, Settings, ShieldCheck, ShoppingCart, Unlock, Users, Wifi, Wrench, X, type LucideIcon } from 'lucide-react';
+import {
+  Activity,
+  ArrowUp,
+  Bell,
+  Box,
+  CalendarDays,
+  CarFront,
+  ChartColumn,
+  Check,
+  ChevronDown,
+  CircleHelp,
+  Clock3,
+  Database,
+  FileText,
+  Headset,
+  Home,
+  Lock,
+  LogOut,
+  Menu,
+  MoreHorizontal,
+  Plus,
+  RotateCcw,
+  Search,
+  Settings,
+  ShieldCheck,
+  ShoppingCart,
+  Unlock,
+  Users,
+  Wifi,
+  WifiOff,
+  Wrench,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
 import SplashScreen from './components/SplashScreen';
 import PosBilling from './components/PosBilling';
 import NewIntake from './components/NewIntake';
@@ -14,6 +47,7 @@ import Reports from './components/Reports';
 import AddPartModal from './components/AddPartModal';
 import SettingsView, { defaultSettings, type GarageSettings } from './components/Settings';
 import UsersManagement from './components/UsersManagement';
+import NotificationsView from './components/NotificationsView';
 import RegistrationPage from './components/RegistrationPage';
 import ActivationPage from './components/ActivationPage';
 import LoginPage from './components/LoginPage';
@@ -50,6 +84,7 @@ function App() {
     license: LicenseStatus | null;
     currentUser: AuthUser | null;
     showActivationOverride: boolean;
+    showLoginDirect: boolean;
   }>({
     loading: true,
     isRegistered: false,
@@ -57,6 +92,7 @@ function App() {
     license: null,
     currentUser: authService.getCurrentUser(),
     showActivationOverride: false,
+    showLoginDirect: false,
   });
 
   useEffect(() => {
@@ -83,6 +119,7 @@ function App() {
               license: res.license || { status: 'UNREGISTERED', accessAllowed: false },
               currentUser: null,
               showActivationOverride: false,
+              showLoginDirect: false,
             });
             return;
           }
@@ -184,23 +221,179 @@ function App() {
     }).catch(() => { setLowStockParts([]); });
   }, [refreshTrigger]);
 
+  const allNotifications = useMemo(() => {
+    const list: any[] = [];
+    quotes.forEach((q: any) => {
+      list.push({
+        id: `quote-${q.id}`,
+        type: 'quote',
+        title: `Quotation #${q.id} Awaiting Approval`,
+        detail: `${q.vehicle} · ${q.customer} (${money(q.amount || 0)})`,
+        time: q.time || 'Pending approval',
+        tab: 'Quotations',
+      });
+    });
+    lowStockParts.forEach((p: any) => {
+      list.push({
+        id: `stock-${p.id || p.partId}`,
+        type: 'stock',
+        title: `Low Stock: ${p.name}`,
+        detail: `Only ${p.quantity} units left (Min threshold: ${p.lowStockAt})`,
+        time: 'Inventory alert',
+        tab: 'Parts Inventory',
+      });
+    });
+    liveOrders.filter((o: any) => o.status === 'Ready for Delivery' || o.status === 'Completed').forEach((o: any) => {
+      list.push({
+        id: `order-${o.id}`,
+        type: 'vehicle',
+        title: `Vehicle Ready: ${o.vehicle}`,
+        detail: `Work Order ${o.id} · ${o.customer} (${o.plate || 'No Plate'})`,
+        time: 'Ready for delivery',
+        tab: 'Work Orders',
+      });
+    });
+    liveInvoices.filter((i: any) => i.status === 'Pending' || i.status === 'Unpaid').slice(0, 3).forEach((i: any) => {
+      list.push({
+        id: `inv-${i.id || i.invoiceId}`,
+        type: 'invoice',
+        title: `Unpaid Invoice #${i.id || i.invoiceId}`,
+        detail: `${i.customer} · Amount: ${money(i.amount || 0)}`,
+        time: 'Pending payment',
+        tab: 'Invoices',
+      });
+    });
+    list.push({
+      id: 'cloud-db-sync',
+      type: 'system',
+      title: 'Atlas Central Directory Connected',
+      detail: `Tenant database [${systemState.registration?.databaseName || 'garage_taha_be02f35e'}] cloud verified`,
+      time: 'Cloud verified',
+      tab: 'Dashboard',
+    });
+    return list;
+  }, [quotes, lowStockParts, liveOrders, liveInvoices, systemState.registration]);
+
   const [modal, setModal] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
   const [sidebar, setSidebar] = useState(false);
   const [notifications, setNotifications] = useState(false);
+  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+  const [showHelpModal, setShowHelpModal] = useState(false);
+  const [showSupportModal, setShowSupportModal] = useState(false);
+  const [supportSubmitted, setSupportSubmitted] = useState(false);
+  const [supportForm, setSupportForm] = useState({ name: '', phone: '', category: 'General', message: '' });
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  const notifRef = useRef<HTMLDivElement>(null);
+  const profileRef = useRef<HTMLDivElement>(null);
+
+  // Close notifications panel and profile dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (notifRef.current && !notifRef.current.contains(target)) {
+        setNotifications(false);
+      }
+      if (profileRef.current && !profileRef.current.contains(target)) {
+        setProfileDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const [readNotifIds, setReadNotifIds] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('garage_read_notifs_v1');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch (_) {
+      return new Set();
+    }
+  });
+
+  const markNotifRead = (id: string) => {
+    setReadNotifIds(prev => {
+      const next = new Set(prev);
+      next.add(id);
+      try {
+        localStorage.setItem('garage_read_notifs_v1', JSON.stringify(Array.from(next)));
+      } catch (_) {}
+      return next;
+    });
+  };
+
+  const markNotifUnread = (id: string) => {
+    setReadNotifIds(prev => {
+      const next = new Set(prev);
+      next.delete(id);
+      try {
+        localStorage.setItem('garage_read_notifs_v1', JSON.stringify(Array.from(next)));
+      } catch (_) {}
+      return next;
+    });
+  };
+
+  const markAllNotifsRead = () => {
+    const allIds = new Set(allNotifications.map(n => n.id));
+    setReadNotifIds(allIds);
+    try {
+      localStorage.setItem('garage_read_notifs_v1', JSON.stringify(Array.from(allIds)));
+    } catch (_) {}
+    setNotice('All notifications marked as read.');
+  };
+
+  const unreadNotifications = useMemo(() => {
+    return allNotifications.filter(n => !readNotifIds.has(n.id));
+  }, [allNotifications, readNotifIds]);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   const searchRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key === 'k') { event.preventDefault(); searchRef.current?.focus(); }
-      if (event.key === 'Escape') { setModal(null); setNotifications(false); setSidebar(false); }
+      if (event.key === 'Escape') {
+        setModal(null);
+        setNotifications(false);
+        setProfileDropdownOpen(false);
+        setSidebar(false);
+        setShowHelpModal(false);
+        setShowSupportModal(false);
+      }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, []);
+
   useEffect(() => { if (!notice) return; const timer = window.setTimeout(() => setNotice(''), 3500); return () => window.clearTimeout(timer); }, [notice]);
   const open = (title: string) => { setModal(title); setSidebar(false); };
   const navigate = (label: string) => {
-    if (label === 'Dashboard' || label === 'POS Billing' || label === 'New Intake' || label === 'Work Orders' || label === 'Quotations' || label === 'Invoices' || label === 'Vehicles' || label === 'Customers' || label === 'Parts Inventory' || label === 'Mechanics' || label === 'Reports' || label === 'Settings') {
+    if (
+      label === 'Dashboard' ||
+      label === 'POS Billing' ||
+      label === 'New Intake' ||
+      label === 'Work Orders' ||
+      label === 'Quotations' ||
+      label === 'Invoices' ||
+      label === 'Vehicles' ||
+      label === 'Customers' ||
+      label === 'Parts Inventory' ||
+      label === 'Mechanics' ||
+      label === 'Reports' ||
+      label === 'Users & Roles' ||
+      label === 'Settings' ||
+      label === 'Notifications'
+    ) {
       setPage(label);
       setSidebar(false);
       setQuery('');
@@ -417,27 +610,40 @@ function App() {
     const user = systemState.currentUser;
     if (!user) return [];
     if (user.role === 'owner') {
-      return [...nav, ['Users & Roles', ShieldCheck] as [string, LucideIcon]];
+      // Owner sees all tabs, with Users & Roles right before Settings, and Settings always last
+      const beforeSettings = nav.filter(([title]) => title !== 'Settings');
+      return [
+        ...beforeSettings,
+        ['Users & Roles', ShieldCheck] as [string, LucideIcon],
+        ['Settings', Settings] as [string, LucideIcon],
+      ];
     }
-    const filtered = nav.filter(([title]) => user.allowedTabs?.includes(title));
-    return filtered.length > 0 ? filtered : nav.slice(0, 1);
+    // Staff/Cashier/Mechanic only see tabs assigned to them by Owner, with Settings always last if permitted
+    const filtered = nav.filter(([title]) => title !== 'Users & Roles' && user.allowedTabs?.includes(title));
+    const withoutSettings = filtered.filter(([title]) => title !== 'Settings');
+    const hasSettings = filtered.some(([title]) => title === 'Settings');
+    return hasSettings
+      ? [...withoutSettings, ['Settings', Settings] as [string, LucideIcon]]
+      : filtered.length > 0
+      ? filtered
+      : nav.slice(0, 1);
   }, [systemState.currentUser]);
 
   if (systemState.loading) {
     return (
-      <div className="min-h-screen bg-[#0b1320] flex items-center justify-center p-4">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-12 h-12 border-3 border-[#f95932] border-t-transparent rounded-full animate-spin" />
-          <p className="text-slate-400 text-xs tracking-wider uppercase font-semibold">
-            Connecting Workshop System...
+      <div className="min-h-screen bg-white flex items-center justify-center p-4 font-sans">
+        <div className="flex flex-col items-center gap-3.5">
+          <div className="w-10 h-10 border-3 border-orange-200 border-t-[#f95932] rounded-full animate-spin" />
+          <p className="text-slate-500 text-xs tracking-wider uppercase font-semibold">
+            Loading Workshop System...
           </p>
         </div>
       </div>
     );
   }
 
-  // 1. Not Registered -> Registration Page
-  if (!systemState.isRegistered || !systemState.registration) {
+  // 1. Not Registered -> Registration Page (unless user clicked "Sign in to existing workshop")
+  if ((!systemState.isRegistered || !systemState.registration) && !systemState.showLoginDirect) {
     return (
       <RegistrationPage
         onRegistered={(reg) => {
@@ -445,6 +651,7 @@ function App() {
             ...prev,
             isRegistered: true,
             registration: reg,
+            showLoginDirect: false,
             license: {
               status: 'ACTIVATION_REQUIRED',
               accessAllowed: false,
@@ -452,15 +659,18 @@ function App() {
             },
           }));
         }}
+        onGoToLogin={() => {
+          setSystemState(prev => ({ ...prev, showLoginDirect: true }));
+        }}
       />
     );
   }
 
-  // 2. Unactivated, Suspended, or Expired -> Activation Page
-  if (!systemState.license?.accessAllowed || systemState.showActivationOverride) {
+  // 2. Unactivated, Suspended, or Expired -> Activation Page (unless bypassed for universal login)
+  if ((!systemState.license?.accessAllowed || systemState.showActivationOverride) && !systemState.showLoginDirect) {
     return (
       <ActivationPage
-        registration={systemState.registration}
+        registration={systemState.registration || { businessId: '', businessName: '', businessType: '', ownerName: '', phone: '', city: '' }}
         license={systemState.license || { status: 'ACTIVATION_REQUIRED', accessAllowed: false }}
         onActivated={() => {
           licenseService.getStatus().then(res => {
@@ -484,13 +694,14 @@ function App() {
             license: { status: 'UNREGISTERED', accessAllowed: false },
             currentUser: null,
             showActivationOverride: false,
+            showLoginDirect: false,
           });
         }}
       />
     );
   }
 
-  // 3. Activated, but not logged in -> Login Page
+  // 3. Activated or Universal Multi-PC Login -> Login Page
   if (!systemState.currentUser) {
     return (
       <LoginPage
@@ -501,10 +712,20 @@ function App() {
             : `${import.meta.env.BASE_URL}${appSettings.logoUrl || 'Garage-crm-logo.png'}`
         }
         onLogin={(user) => {
-          setSystemState(prev => ({ ...prev, currentUser: user }));
+          licenseService.getStatus().then(res => {
+            setSystemState({
+              loading: false,
+              isRegistered: true,
+              registration: res.registration || null,
+              license: res.license,
+              currentUser: user,
+              showActivationOverride: false,
+              showLoginDirect: false,
+            });
+          });
         }}
         onOpenActivation={() => {
-          setSystemState(prev => ({ ...prev, showActivationOverride: true }));
+          setSystemState(prev => ({ ...prev, showActivationOverride: true, showLoginDirect: false }));
         }}
         onResetToRegister={() => {
           setSystemState({
@@ -514,6 +735,7 @@ function App() {
             license: { status: 'UNREGISTERED', accessAllowed: false },
             currentUser: null,
             showActivationOverride: false,
+            showLoginDirect: false,
           });
         }}
       />
@@ -567,11 +789,23 @@ function App() {
                 onClick={() => navigate(label)}
                 title={label}
               >
-                <Icon size={23} strokeWidth={isSelected ? 2.4 : 2.0} />
+                <Icon size={19} strokeWidth={isSelected ? 2.4 : 2.0} />
                 <span>{label}</span>
               </button>
             );
           })}
+        </div>
+
+        <div className="nav-group-bottom">
+          <button
+            type="button"
+            className="nav-item nav-logout-item"
+            onClick={handleLogout}
+            title="Sign Out from Garage CRM"
+          >
+            <LogOut size={19} />
+            <span>Sign Out</span>
+          </button>
         </div>
       </nav>
     </aside>
@@ -581,73 +815,242 @@ function App() {
         <button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setSidebar(true)}><Menu /></button>
         <div className="topbar-workshop-hub">
           <div
-            className="workshop-identity"
-            onClick={() => navigate('Settings')}
-            style={{ cursor: 'pointer' }}
-            title="Open Workshop Settings"
+            className="topbar-suite-pill"
+            onClick={() => navigate('Dashboard')}
+            title="Garage CRM Suite - Click to return to Dashboard"
           >
-            <div className="workshop-identity-icon">
-              <Wrench size={16} />
+            <div className="topbar-suite-icon">
+              <Wrench size={20} strokeWidth={2.4} />
             </div>
-            <div className="workshop-identity-info">
-              <span className="workshop-name">{appSettings.garageName || 'Doha Central Workshop & Service Hub'}</span>
-              <span className="workshop-branch">{appSettings.facilitySubtitle || 'Main Garage Facility • Bays 01–12'}</span>
+            <div className="topbar-suite-details">
+              <div className="topbar-suite-title-row">
+                <span className="topbar-suite-title">GARAGE CRM SUITE</span>
+                <span className="topbar-suite-tag">
+                  <span className="dot" />
+                  Active
+                </span>
+              </div>
+              <span className="topbar-suite-sub">
+                <span>Workshop Workspace</span>
+                <span className="dot-sep">•</span>
+                <span className="active-page">{page}</span>
+              </span>
             </div>
           </div>
         </div>
 
         <div className="header-right">
-          <div className="date">
-            <CalendarDays size={18} />
+          <div className="date-pill">
+            <CalendarDays size={16} />
+            <span className="day-badge">
+              {new Date().toLocaleDateString('en-GB', { weekday: 'short' })}
+            </span>
             <span>
               {new Date().toLocaleDateString('en-GB', {
-                weekday: 'short',
                 day: 'numeric',
                 month: 'short',
                 year: 'numeric',
               })}
             </span>
           </div>
-          <div className="notifications">
+
+          <div className="notifications" ref={notifRef}>
             <button
               className="icon-button bell"
               aria-label="Notifications"
               aria-expanded={notifications}
-              onClick={() => setNotifications(!notifications)}
+              onClick={() => {
+                setNotifications(!notifications);
+                setProfileDropdownOpen(false);
+              }}
             >
-              <Bell size={21} />
-              <span>{quotes.length}</span>
+              <Bell size={20} />
+              {unreadNotifications.length > 0 && <span>{unreadNotifications.length}</span>}
             </button>
             {notifications && (
-              <div className="notification-menu">
-                <strong>Notifications</strong>
-                <p>{quotes.length} quotations are awaiting your approval.</p>
-                <p>{lowStockParts.length} inventory items are running low.</p>
-                <p>{vehiclesReadyCount} vehicles are ready for delivery.</p>
+              <div className="notification-menu-enhanced">
+                <div className="notif-header">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Bell size={16} style={{ color: '#ea580c' }} />
+                    <h4>Real-Time Alerts</h4>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {unreadNotifications.length > 0 && (
+                      <button
+                        type="button"
+                        className="notif-mark-read-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          markAllNotifsRead();
+                        }}
+                        title="Mark all alerts as read"
+                      >
+                        <Check size={12} />
+                        <span>Mark as read</span>
+                      </button>
+                    )}
+                    <span className="notif-count-badge">{unreadNotifications.length} Active</span>
+                  </div>
+                </div>
+                <div className="notif-list">
+                  {allNotifications.map((n) => (
+                    <button
+                      key={n.id}
+                      type="button"
+                      className={`notif-item ${readNotifIds.has(n.id) ? 'is-read' : 'is-unread'}`}
+                      onClick={() => {
+                        markNotifRead(n.id);
+                        setNotifications(false);
+                        navigate(n.tab);
+                      }}
+                    >
+                      <div className={`notif-icon-wrap ${n.type}`}>
+                        {n.type === 'quote' ? (
+                          <FileText size={15} />
+                        ) : n.type === 'stock' ? (
+                          <Box size={15} />
+                        ) : n.type === 'vehicle' ? (
+                          <CarFront size={15} />
+                        ) : n.type === 'invoice' ? (
+                          <ShoppingCart size={15} />
+                        ) : (
+                          <Database size={15} />
+                        )}
+                      </div>
+                      <div className="notif-content">
+                        <strong>{n.title}</strong>
+                        <p>{n.detail}</p>
+                        <small>{n.time}</small>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <div className="notif-footer">
+                  <button
+                    type="button"
+                    className="notif-view-all-btn"
+                    onClick={() => {
+                      setNotifications(false);
+                      navigate('Notifications');
+                    }}
+                  >
+                    View All Notifications ({allNotifications.length})
+                  </button>
+                </div>
               </div>
             )}
           </div>
-          <div className="flex items-center gap-2">
+
+          <div className="profile-container" ref={profileRef}>
             <button
               className="profile"
-              onClick={() => (systemState.currentUser?.role === 'owner' ? navigate('Settings') : null)}
-              title="Workshop Settings & Profile"
+              onClick={() => {
+                setProfileDropdownOpen(!profileDropdownOpen);
+                setNotifications(false);
+              }}
+              title="Workshop Settings & Profile Menu"
             >
               <span className="profile-avatar">{getInitials(systemState.currentUser?.fullName || appSettings.ownerName)}</span>
               <span>
                 <strong>{systemState.currentUser?.fullName || appSettings.ownerName || 'Sheikh Ahmed'}</strong>
                 <small className="capitalize">{systemState.currentUser?.role || appSettings.ownerRole || 'Garage Owner'}</small>
               </span>
-              {systemState.currentUser?.role === 'owner' && <ChevronDown size={17} />}
+              <ChevronDown
+                size={16}
+                style={{
+                  transform: profileDropdownOpen ? 'rotate(180deg)' : 'none',
+                  transition: 'transform 0.15s ease',
+                }}
+              />
             </button>
-            <button
-              onClick={handleLogout}
-              className="icon-button"
-              style={{ width: '38px', height: '38px', borderRadius: '10px' }}
-              title="Sign Out from Garage CRM"
-            >
-              <LogOut size={16} />
-            </button>
+
+            {profileDropdownOpen && (
+              <div className="profile-dropdown-menu">
+                <div className="profile-dropdown-header">
+                  <div className="profile-dropdown-user">
+                    <span className="profile-dropdown-avatar">
+                      {getInitials(systemState.currentUser?.fullName || appSettings.ownerName)}
+                    </span>
+                    <div className="profile-dropdown-details">
+                      <strong>{systemState.currentUser?.fullName || appSettings.ownerName}</strong>
+                      <small>@{systemState.currentUser?.username || 'admin'}</small>
+                    </div>
+                  </div>
+                  <div className="profile-dropdown-meta">
+                    <div>
+                      <span style={{ color: '#94a3b8' }}>Workshop: </span>
+                      <strong style={{ color: '#ffffff' }}>{appSettings.garageName || systemState.registration?.businessName || 'Auto Care Hub'}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="profile-dropdown-items">
+                  <button
+                    type="button"
+                    className="profile-dropdown-item"
+                    onClick={() => {
+                      setProfileDropdownOpen(false);
+                      navigate('Settings');
+                    }}
+                  >
+                    <Settings size={15} />
+                    <span>Workshop Settings</span>
+                  </button>
+
+                  {systemState.currentUser?.role === 'owner' && (
+                    <button
+                      type="button"
+                      className="profile-dropdown-item"
+                      onClick={() => {
+                        setProfileDropdownOpen(false);
+                        navigate('Users & Roles');
+                      }}
+                    >
+                      <ShieldCheck size={15} />
+                      <span>Users &amp; Role Permissions</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    className="profile-dropdown-item"
+                    onClick={() => {
+                      setProfileDropdownOpen(false);
+                      setShowHelpModal(true);
+                    }}
+                  >
+                    <CircleHelp size={15} />
+                    <span>System Help &amp; FAQs</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="profile-dropdown-item"
+                    onClick={() => {
+                      setProfileDropdownOpen(false);
+                      setShowSupportModal(true);
+                    }}
+                  >
+                    <Headset size={15} />
+                    <span>Contact Technical Support</span>
+                  </button>
+
+                  <div style={{ height: '1px', background: '#f1f5f9', margin: '4px 0' }} />
+
+                  <button
+                    type="button"
+                    className="profile-dropdown-item logout"
+                    onClick={() => {
+                      setProfileDropdownOpen(false);
+                      handleLogout();
+                    }}
+                  >
+                    <LogOut size={15} />
+                    <span>Sign Out</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -742,11 +1145,23 @@ function App() {
       <div hidden={page !== 'Reports'}>
         <Reports notify={setNotice} />
       </div>
+      <div hidden={page !== 'Users & Roles'}>
+        <UsersManagement notify={setNotice} />
+      </div>
       <div hidden={page !== 'Settings'}>
         <SettingsView notify={setNotice} />
       </div>
-      <div hidden={page !== 'Users & Roles'}>
-        <UsersManagement />
+      <div hidden={page !== 'Notifications'}>
+        <NotificationsView
+          notifications={allNotifications}
+          readNotifIds={readNotifIds}
+          onMarkRead={markNotifRead}
+          onMarkUnread={markNotifUnread}
+          onMarkAllRead={markAllNotifsRead}
+          onNavigate={navigate}
+          onRefresh={() => setRefreshTrigger(prev => prev + 1)}
+          notify={setNotice}
+        />
       </div>
       <main hidden={page !== 'Dashboard'} className="dashboard">
         <div className="dashboard-header-bar">
@@ -829,7 +1244,255 @@ function App() {
         </div>
       </main>
     </div>
-    <footer className="statusbar"><div><span className="online-dot" />System Online<Wifi size={15} /><span className="footer-divider" /><span>Qatar Time (GMT+3)</span><span className="sync">Last synced: 14 Apr 2025, 12:05 PM</span></div><div><span>Garage Workspace v1.0.0</span><button onClick={() => open('Help')}><CircleHelp size={16} />Help</button><button onClick={() => open('Support')}><Headset size={16} />Support</button></div></footer>
+    <footer className="statusbar">
+      <div>
+        <span className="online-indicator-wrap" title={isOnline ? 'System Online (Atlas Cloud Database Active)' : 'System Offline (Local Workspace)'}>
+          <span className={`online-ping ${!isOnline ? 'offline' : ''}`} />
+          <span className={`online-core ${!isOnline ? 'offline' : ''}`} />
+        </span>
+        <span>{isOnline ? 'System Online' : 'System Offline (Local)'}</span>
+        {isOnline ? (
+          <Wifi size={15} className="wifi-animated" />
+        ) : (
+          <WifiOff size={15} style={{ color: '#ef4444' }} />
+        )}
+        <span className="footer-divider" />
+        <span>Qatar Time (GMT+3)</span>
+      </div>
+
+      <div className="statusbar-center">
+        <span>Powered by <strong>Vertexia</strong></span>
+      </div>
+
+      <div>
+        <span>Garage Workspace v1.0.0</span>
+        <button onClick={() => setShowHelpModal(true)}><CircleHelp size={15} />Help</button>
+        <button onClick={() => setShowSupportModal(true)}><Headset size={15} />Support</button>
+      </div>
+    </footer>
+
+    {/* Help Modal */}
+    {showHelpModal && (
+      <div className="modal-backdrop" onClick={() => setShowHelpModal(false)}>
+        <section className="modal" style={{ width: '560px' }} role="dialog" aria-modal="true" onClick={e => e.stopPropagation()}>
+          <div className="modal-heading">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: '#fff0e7', color: '#f15a24', display: 'grid', placeItems: 'center' }}>
+                <CircleHelp size={20} />
+              </div>
+              <div>
+                <h2 style={{ fontSize: '17px', margin: 0 }}>Garage CRM Help &amp; FAQs</h2>
+                <p style={{ margin: 0, fontSize: '11px', color: '#64748b' }}>Quick reference manual and keyboard shortcuts</p>
+              </div>
+            </div>
+            <button className="icon-button" aria-label="Close" onClick={() => setShowHelpModal(false)}><X size={16} /></button>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '12px', color: '#334155' }}>
+            <div style={{ padding: '10px 12px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+              <strong style={{ display: 'block', color: '#0f172a', marginBottom: '4px' }}>⚡ System Keyboard Shortcuts</strong>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '11px' }}>
+                <div><kbd style={{ background: '#e2e8f0', padding: '2px 5px', borderRadius: '4px', fontSize: '10px' }}>Ctrl + K</kbd> Focus Global Search</div>
+                <div><kbd style={{ background: '#e2e8f0', padding: '2px 5px', borderRadius: '4px', fontSize: '10px' }}>Esc</kbd> Close Active Dialog / Modal</div>
+              </div>
+            </div>
+
+            <div style={{ padding: '10px 12px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+              <strong style={{ display: 'block', color: '#0f172a', marginBottom: '4px' }}>🚗 Creating New Intake &amp; Job Card</strong>
+              <p style={{ margin: 0, fontSize: '11px', color: '#64748b', lineHeight: 1.45 }}>
+                Go to <strong>New Intake</strong> in the sidebar. Select or add a customer and vehicle, then choose whether to create an instant Work Order or draft a Quotation.
+              </p>
+            </div>
+
+            <div style={{ padding: '10px 12px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+              <strong style={{ display: 'block', color: '#0f172a', marginBottom: '4px' }}>🛒 POS Billing &amp; Counter Sales</strong>
+              <p style={{ margin: 0, fontSize: '11px', color: '#64748b', lineHeight: 1.45 }}>
+                Open <strong>POS Billing</strong> for quick spare parts sales. Scan or search parts, select customer, apply VAT or discounts, and print invoices or returns directly.
+              </p>
+            </div>
+
+            <div style={{ padding: '10px 12px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+              <strong style={{ display: 'block', color: '#0f172a', marginBottom: '4px' }}>☁️ Multi-PC Cloud Database</strong>
+              <p style={{ margin: 0, fontSize: '11px', color: '#64748b', lineHeight: 1.45 }}>
+                Your workshop data is stored in your dedicated MongoDB Atlas cloud database. Logging in from any PC with your credentials automatically connects to your workshop.
+              </p>
+            </div>
+          </div>
+
+          <div style={{ marginTop: '18px', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+            <button
+              type="button"
+              className="subtle-button"
+              onClick={() => { setShowHelpModal(false); setShowSupportModal(true); }}
+            >
+              <Headset size={14} /> Contact Support
+            </button>
+            <button type="button" className="primary-button" onClick={() => setShowHelpModal(false)}>
+              Close
+            </button>
+          </div>
+        </section>
+      </div>
+    )}
+
+    {/* Support Modal */}
+    {showSupportModal && (
+      <div className="modal-backdrop" onClick={() => setShowSupportModal(false)}>
+        <section className="modal" style={{ width: '520px' }} role="dialog" aria-modal="true" onClick={e => e.stopPropagation()}>
+          <div className="modal-heading">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: '#fff0e7', color: '#f15a24', display: 'grid', placeItems: 'center' }}>
+                <Headset size={20} />
+              </div>
+              <div>
+                <h2 style={{ fontSize: '17px', margin: 0 }}>Vertexia Support Desk</h2>
+                <p style={{ margin: 0, fontSize: '11px', color: '#64748b' }}>Technical help &amp; customer assistance</p>
+              </div>
+            </div>
+            <button className="icon-button" aria-label="Close" onClick={() => setShowSupportModal(false)}><X size={16} /></button>
+          </div>
+
+          {supportSubmitted ? (
+            <div style={{ textAlign: 'center', padding: '24px 16px' }}>
+              <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#ecfdf5', color: '#16a34a', display: 'grid', placeItems: 'center', margin: '0 auto 12px' }}>
+                <Check size={26} />
+              </div>
+              <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a', margin: '0 0 6px' }}>Support Ticket Submitted!</h3>
+              <p style={{ fontSize: '12px', color: '#64748b', margin: 0, lineHeight: 1.45 }}>
+                Thank you. Your support request has been dispatched to the Vertexia technical team. An engineer will contact you via WhatsApp / Phone shortly.
+              </p>
+              <button
+                type="button"
+                className="primary-button"
+                style={{ marginTop: '16px' }}
+                onClick={() => {
+                  setSupportSubmitted(false);
+                  setShowSupportModal(false);
+                }}
+              >
+                Close
+              </button>
+            </div>
+          ) : (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                setSupportSubmitted(true);
+                setNotice('Support ticket submitted successfully to Vertexia!');
+              }}
+            >
+              {/* Quick Direct WhatsApp / Call buttons */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '14px' }}>
+                <a
+                  href="https://wa.me/923172981931?text=Hello%20Vertexia%20Support,%20I%20need%20help%20with%20Garage%20CRM"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    padding: '8px 10px',
+                    borderRadius: '8px',
+                    background: '#ecfdf5',
+                    border: '1px solid #a7f3d0',
+                    color: '#15803d',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    textDecoration: 'none',
+                  }}
+                >
+                  <span>💬 WhatsApp Support</span>
+                </a>
+                <a
+                  href="mailto:support@vertexiaagency.com?subject=Garage%20CRM%20Support%20Request"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    padding: '8px 10px',
+                    borderRadius: '8px',
+                    background: '#eff6ff',
+                    border: '1px solid #bfdbfe',
+                    color: '#1d4ed8',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    textDecoration: 'none',
+                  }}
+                >
+                  <span>✉️ Email Support</span>
+                </a>
+              </div>
+
+              <p style={{ fontSize: '11px', color: '#64748b', margin: '0 0 12px' }}>
+                Or fill out the direct support ticket below:
+              </p>
+
+              <label style={{ margin: '8px 0', fontSize: '11px', fontWeight: 600 }}>
+                Your Name / Garage Owner *
+                <input
+                  required
+                  value={supportForm.name}
+                  onChange={e => setSupportForm({ ...supportForm, name: e.target.value })}
+                  placeholder={systemState.currentUser?.fullName || 'e.g. Sheikh Ahmed'}
+                />
+              </label>
+
+              <label style={{ margin: '8px 0', fontSize: '11px', fontWeight: 600 }}>
+                Contact Phone / WhatsApp *
+                <input
+                  required
+                  value={supportForm.phone}
+                  onChange={e => setSupportForm({ ...supportForm, phone: e.target.value })}
+                  placeholder="+974 5512 3456"
+                />
+              </label>
+
+              <label style={{ margin: '8px 0', fontSize: '11px', fontWeight: 600 }}>
+                Issue Category
+                <select
+                  value={supportForm.category}
+                  onChange={e => setSupportForm({ ...supportForm, category: e.target.value })}
+                  style={{
+                    width: '100%',
+                    marginTop: '6px',
+                    padding: '9px 10px',
+                    background: '#f7f9fc',
+                    border: '1px solid #dce3ec',
+                    borderRadius: '7px',
+                    fontSize: '11.5px',
+                    color: '#1e293b',
+                  }}
+                >
+                  <option value="General">General Inquiry</option>
+                  <option value="Billing">POS &amp; Invoicing Issue</option>
+                  <option value="WorkOrders">Work Orders &amp; Intake</option>
+                  <option value="License">License &amp; Activation Key</option>
+                  <option value="Database">MongoDB Cloud Database</option>
+                  <option value="Feature">Feature Request</option>
+                </select>
+              </label>
+
+              <label style={{ margin: '8px 0', fontSize: '11px', fontWeight: 600 }}>
+                Issue Description *
+                <textarea
+                  required
+                  rows={3}
+                  value={supportForm.message}
+                  onChange={e => setSupportForm({ ...supportForm, message: e.target.value })}
+                  placeholder="Describe the problem you are experiencing or question..."
+                />
+              </label>
+
+              <button type="submit" className="primary-button" style={{ width: '100%', marginTop: '14px' }}>
+                Submit Support Ticket
+              </button>
+            </form>
+          )}
+        </section>
+      </div>
+    )}
     {notice && (
       <div className="toast" role="status">
         <span className="toast-icon-wrap">
