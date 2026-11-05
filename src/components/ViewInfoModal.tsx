@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   X,
   CarFront,
@@ -150,6 +151,18 @@ export default function ViewInfoModal({
     });
   }, [isOpen, target]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen || !target) return null;
 
   const raw = target.data || {};
@@ -172,9 +185,41 @@ export default function ViewInfoModal({
 
   const latestOrder = workOrdersList[0];
 
-  return (
-    <div className="view-info-backdrop" onClick={onClose}>
-      <div className="view-info-modal-card" onClick={(e) => e.stopPropagation()}>
+  return createPortal(
+    <div
+      className="view-info-backdrop"
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: "100vw",
+        height: "100vh",
+        margin: 0,
+        padding: "16px",
+        zIndex: 999999,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "rgba(15, 23, 42, 0.65)",
+        backdropFilter: "blur(4px)",
+        WebkitBackdropFilter: "blur(4px)",
+        overflowY: "auto",
+      }}
+    >
+      <div
+        className="view-info-modal-card"
+        style={{
+          margin: "auto",
+          position: "relative",
+          flexShrink: 0,
+          maxWidth: "960px",
+          width: "100%",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header matching CRM page headings */}
         <div className="view-info-header">
           <div className="view-info-header-identity">
@@ -376,11 +421,11 @@ export default function ViewInfoModal({
                       </div>
                       <div>
                         <span>Service Advisor</span>
-                        <strong>{latestOrder.advisor || "Sheikh Ahmed"}</strong>
+                        <strong>{latestOrder.advisor || "Unassigned"}</strong>
                       </div>
                       <div>
                         <span>Assigned Mechanic</span>
-                        <strong>{latestOrder.mechanic || "Ali Hassan"}</strong>
+                        <strong>{latestOrder.mechanic || "Unassigned"}</strong>
                       </div>
                       <div>
                         <span>Primary Service</span>
@@ -440,7 +485,7 @@ export default function ViewInfoModal({
                       <td style={{ maxWidth: "220px", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {wo.detail || wo.notes || "Maintenance service"}
                       </td>
-                      <td>{wo.mechanic || "Ali Hassan"}</td>
+                      <td>{wo.mechanic || "Unassigned"}</td>
                       <td>
                         <span className={`vehicle-status-badge ${wo.status === "Completed" ? "ready" : "in-service"}`}>
                           {wo.status || "In Progress"}
@@ -522,7 +567,7 @@ export default function ViewInfoModal({
                       {allLabourCharges.map((l, idx) => (
                         <tr key={idx}>
                           <td><strong>{l.service}</strong></td>
-                          <td>{l.mechanic || "Ali Hassan"}</td>
+                          <td>{l.mechanic || "Unassigned"}</td>
                           <td>{l.hours || "1"} hrs</td>
                           <td>{money(l.rate || l.amount)}</td>
                           <td><strong>{money(l.amount)}</strong></td>
@@ -596,6 +641,7 @@ export default function ViewInfoModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ShieldCheck,
   UserPlus,
@@ -6,7 +7,6 @@ import {
   X,
   Edit2,
   Trash2,
-  Activity,
   Search,
   Phone,
   Mail,
@@ -194,6 +194,18 @@ export default function UsersManagement({ notify }: UsersManagementProps) {
       }));
     }
   };
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busy) {
+        e.stopPropagation();
+        setModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [modalOpen, busy]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -765,24 +777,35 @@ export default function UsersManagement({ notify }: UsersManagementProps) {
       {/* ========================================================================= */}
       {/* MODAL: ADD / EDIT STAFF USER (Identical CRM Dialog Design)               */}
       {/* ========================================================================= */}
-      {modalOpen && (
+      {modalOpen && createPortal(
         <div
           className="modal-backdrop"
           style={{
             position: 'fixed',
-            inset: 0,
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: '100vw',
+            height: '100vh',
+            margin: 0,
             backgroundColor: 'rgba(15, 23, 42, 0.65)',
             backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
             zIndex: 999999,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             padding: '16px',
+            overflowY: 'auto',
           }}
           onClick={() => !busy && setModalOpen(false)}
         >
           <div
             style={{
+              margin: 'auto',
+              position: 'relative',
+              flexShrink: 0,
               background: '#ffffff',
               borderRadius: '14px',
               width: '100%',
@@ -1355,7 +1378,8 @@ export default function UsersManagement({ notify }: UsersManagementProps) {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </main>
   );

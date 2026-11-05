@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { workOrdersApi, invoicesApi } from "../lib/api";
+import { workOrdersApi, invoicesApi, mechanicsApi } from "../lib/api";
 import { getNextInvoiceId, commitInvoiceId } from "../lib/sequence";
 import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
 import { CustomDropdown } from "./CustomDropdown";
@@ -43,6 +43,7 @@ type WorkOrder = {
   service: string;
   detail?: string;
   mechanic: string;
+  advisor?: string;
   status: WorkOrderStatus;
   total: number;
   externalParts?: any[];
@@ -63,18 +64,40 @@ const statusClass: Record<string, string> = {
   "Cancelled": "rejected",
 };
 
-const money = (value: number) =>
-  `QAR ${(value || 0).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-
 function WorkOrders(props: {
   notify: (message: string) => void;
   onNavigateToInvoices?: () => void;
   refreshTrigger?: number;
 }) {
   const { notify, refreshTrigger } = props;
+  const [docSettings, setDocSettings] = useState<any>(() => {
+    try {
+      const saved = localStorage.getItem('garage_crm_settings_v1');
+      return saved ? JSON.parse(saved) : null;
+    } catch (_) { return null; }
+  });
+
+  useEffect(() => {
+    const onSettings = (e: any) => {
+      if (e.detail) setDocSettings(e.detail);
+      else {
+        try {
+          const saved = localStorage.getItem('garage_crm_settings_v1');
+          if (saved) setDocSettings(JSON.parse(saved));
+        } catch (_) {}
+      }
+    };
+    window.addEventListener('garage-settings-updated', onSettings);
+    return () => window.removeEventListener('garage-settings-updated', onSettings);
+  }, []);
+
+  const currencyCode = docSettings?.currency || "USD";
+  const money = (value: number) =>
+    `${currencyCode} ${(Number(value) || 0).toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [search, setSearch] = useState("");
@@ -85,7 +108,19 @@ function WorkOrders(props: {
 
   // Selected Order Edit States
   const [repairStatus, setRepairStatus] = useState<WorkOrderStatus>("In Progress");
-  const [assignedMechanic, setAssignedMechanic] = useState("Ali Hassan");
+  const [assignedMechanic, setAssignedMechanic] = useState("");
+  const [availableMechanics, setAvailableMechanics] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("garage_crm_mechanics_v1");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.map((m: any) => m.name).filter(Boolean);
+        }
+      }
+    } catch {}
+    return [];
+  });
   const [repairDate, setRepairDate] = useState("");
   const [completionDate, setCompletionDate] = useState("");
   const [vehicleReady, setVehicleReady] = useState("No - In Progress");
@@ -123,9 +158,16 @@ function WorkOrders(props: {
       .getAll({ limit: 100 })
       .then((res) => {
         const data = (res.data || []) as WorkOrder[];
-        setOrders(data);
-        if (data.length > 0 && !selectedId) {
-          setSelectedId(data[0].id || data[0].workOrderId || "");
+        const seen = new Set<string>();
+        const dedupedData = data.filter((item: any) => {
+          const key = `${item.customer}_${item.vehicle}_${item.plate}_${item.service}`.toLowerCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        setOrders(dedupedData);
+        if (dedupedData.length > 0 && !selectedId) {
+          setSelectedId(dedupedData[0].id || dedupedData[0].workOrderId || "");
         }
       })
       .catch((err) => {
@@ -135,6 +177,40 @@ function WorkOrders(props: {
 
   useEffect(() => {
     fetchOrders();
+
+    const loadMechanics = () => {
+      try {
+        const saved = localStorage.getItem("garage_crm_mechanics_v1");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            setAvailableMechanics(parsed.map((m: any) => m.name).filter(Boolean));
+          }
+        } else {
+          setAvailableMechanics([]);
+        }
+      } catch {}
+
+      if (typeof mechanicsApi !== "undefined" && mechanicsApi?.getAll) {
+        mechanicsApi.getAll({ limit: 100 }).then((res) => {
+          if (res?.data && Array.isArray(res.data)) {
+            setAvailableMechanics(res.data.map((m: any) => m.name).filter(Boolean));
+          } else if (res?.data && res.data.length === 0) {
+            setAvailableMechanics([]);
+          }
+        }).catch(() => {});
+      }
+    };
+
+    loadMechanics();
+    window.addEventListener("garage_mechanics_updated", loadMechanics);
+    window.addEventListener("storage", loadMechanics);
+    window.addEventListener("focus", loadMechanics);
+    return () => {
+      window.removeEventListener("garage_mechanics_updated", loadMechanics);
+      window.removeEventListener("storage", loadMechanics);
+      window.removeEventListener("focus", loadMechanics);
+    };
   }, [refreshTrigger]);
 
   const handleConfirmDeleteOrder = async () => {
@@ -187,7 +263,7 @@ function WorkOrders(props: {
   useEffect(() => {
     if (!selectedOrder) return;
     setRepairStatus(selectedOrder.status || "In Progress");
-    setAssignedMechanic(selectedOrder.mechanic || "Ali Hassan");
+    setAssignedMechanic(selectedOrder.mechanic || "");
     setRepairDate(
       selectedOrder.date ||
         new Date().toISOString().slice(0, 10)
@@ -250,7 +326,7 @@ function WorkOrders(props: {
         service: selectedOrder.service || "General Repair",
         amount: selectedOrder.total || 0,
         status: "Pending",
-        advisor: "Ali Hassan",
+        advisor: selectedOrder.advisor || "",
         items,
         date: today,
         dueDate: today,
@@ -381,10 +457,7 @@ function WorkOrders(props: {
               ariaLabel="Filter by assigned mechanic"
               options={[
                 "All Mechanics",
-                "Ali Hassan",
-                "M. Khan",
-                "Ali Shah",
-                "Sheikh Ahmed",
+                ...availableMechanics,
               ]}
             />
           </div>
@@ -648,10 +721,10 @@ function WorkOrders(props: {
                       value={assignedMechanic}
                       onChange={(e) => setAssignedMechanic(e.target.value)}
                     >
-                      <option>Ali Hassan</option>
-                      <option>M. Khan</option>
-                      <option>Ali Shah</option>
-                      <option>Sheikh Ahmed</option>
+                      <option value="">Select Mechanic</option>
+                      {availableMechanics.map((mech) => (
+                        <option key={mech} value={mech}>{mech}</option>
+                      ))}
                     </select>
                   </label>
 
@@ -1002,15 +1075,49 @@ function WorkOrders(props: {
             {/* Tax Invoice Document Header */}
             <div className="tax-invoice-header">
               <div className="tax-invoice-brand" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <img
-                  src={`${import.meta.env.BASE_URL}Garage-crm-logo-light.png`}
-                  alt="Company Logo"
-                  style={{ height: "46px", width: "auto", objectFit: "contain" }}
-                />
+                {docSettings?.showLogoOnPrint !== false && docSettings?.logoUrl ? (
+                  <img
+                    src={
+                      docSettings.logoUrl.startsWith("data:")
+                        ? docSettings.logoUrl
+                        : `${import.meta.env.BASE_URL}${docSettings.logoUrl}`
+                    }
+                    alt="Company Logo"
+                    style={{ height: "46px", width: "auto", objectFit: "contain" }}
+                    onError={(e) => {
+                      (e.target as HTMLElement).style.display = "none";
+                    }}
+                  />
+                ) : (
+                  <div style={{
+                    width: "44px",
+                    height: "44px",
+                    borderRadius: "8px",
+                    background: "linear-gradient(135deg, #0f172a, #1e293b)",
+                    color: "#f97316",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontWeight: 900,
+                    fontSize: "18px",
+                    border: "1px solid #334155"
+                  }}>
+                    {((docSettings?.garageName || "GC").substring(0, 2)).toUpperCase()}
+                  </div>
+                )}
                 <div>
-                  <h2>DOHA CENTRAL WORKSHOP</h2>
-                  <p>Auto Care &amp; Service Hub · Bays 01–12 · Doha, Qatar</p>
-                  <p>Phone: +974 5555 1234 · C.R: 84920/1</p>
+                  <h2>{(docSettings?.garageName || "GARAGE WORKSHOP").toUpperCase()}</h2>
+                  <p>{docSettings?.facilitySubtitle || docSettings?.address || "Automotive Care & Diagnostics Center"}</p>
+                  {(docSettings?.phone || docSettings?.email || docSettings?.crNumber) && (
+                    <p>
+                      {[
+                        docSettings?.phone ? `Phone: ${docSettings.phone}` : null,
+                        docSettings?.email ? `Email: ${docSettings.email}` : null,
+                        docSettings?.crNumber ? `C.R: ${docSettings.crNumber}` : null,
+                        docSettings?.taxNumber ? `Tax/TIN: ${docSettings.taxNumber}` : null,
+                      ].filter(Boolean).join(" · ")}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="tax-invoice-meta">
@@ -1031,7 +1138,6 @@ function WorkOrders(props: {
                 <strong>Released To Customer</strong>
                 <div className="party-name">{selectedOrder.customer}</div>
                 <div className="party-detail">Phone: {selectedOrder.customerPhone || "N/A"}</div>
-                <div className="party-detail">Location: Doha, Qatar</div>
               </div>
               <div>
                 <strong>Vehicle Identification</strong>
@@ -1090,9 +1196,9 @@ function WorkOrders(props: {
                 <p style={{ margin: 0 }}>This document confirms vehicle clearance to depart workshop premises. Handover is complete.</p>
               </div>
               <div className="totals-box" style={{ minWidth: "210px" }}>
-                <div className="total-row grand">
+                <div className="total-row grand" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", gap: "10px" }}>
                   <span>Exit Clearance</span>
-                  <span style={{ color: "#078348" }}>APPROVED</span>
+                  <span style={{ color: "#078348", fontWeight: 700 }}>APPROVED</span>
                 </div>
               </div>
             </div>
@@ -1100,7 +1206,7 @@ function WorkOrders(props: {
             {/* Signatures */}
             <div className="tax-invoice-footer" style={{ marginTop: "24px" }}>
               <div>
-                <p className="thank-you">Thank you for trusting Garage Workspace!</p>
+                <p className="thank-you">Thank you for trusting {docSettings?.garageName || "us"}!</p>
                 <p className="warranty">For assistance or queries, please contact workshop customer support.</p>
               </div>
               <div style={{ display: "flex", gap: "25px" }}>
@@ -1125,15 +1231,47 @@ function WorkOrders(props: {
             {/* Tax Invoice Document Header */}
             <div className="tax-invoice-header">
               <div className="tax-invoice-brand" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <img
-                  src={`${import.meta.env.BASE_URL}Garage-crm-logo-light.png`}
-                  alt="Company Logo"
-                  style={{ height: "46px", width: "auto", objectFit: "contain" }}
-                />
+                {docSettings?.showLogoOnPrint !== false && docSettings?.logoUrl ? (
+                  <img
+                    src={
+                      docSettings.logoUrl.startsWith("data:")
+                        ? docSettings.logoUrl
+                        : `${import.meta.env.BASE_URL}${docSettings.logoUrl}`
+                    }
+                    alt="Company Logo"
+                    style={{ height: "46px", width: "auto", objectFit: "contain", borderRadius: "4px" }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      height: "44px",
+                      width: "44px",
+                      borderRadius: "6px",
+                      background: "#0f2942",
+                      color: "#ffffff",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontWeight: 800,
+                      fontSize: "14px",
+                    }}
+                  >
+                    {(docSettings?.garageName || "GARAGE").slice(0, 2).toUpperCase()}
+                  </div>
+                )}
                 <div>
-                  <h2>DOHA CENTRAL WORKSHOP</h2>
-                  <p>Auto Care &amp; Service Hub · Bays 01–12 · Doha, Qatar</p>
-                  <p>Phone: +974 5555 1234 · C.R: 84920/1</p>
+                  <h2 style={{ margin: "0 0 2px", fontSize: "16px", fontWeight: 800, color: "#0f2942" }}>
+                    {docSettings?.garageName || "GARAGE WORKSHOP"}
+                  </h2>
+                  <p style={{ margin: "0 0 1px", fontSize: "10px", color: "#64748b" }}>
+                    {docSettings?.facilitySubtitle || docSettings?.address || "Premier Automotive Care & Service Center"}
+                  </p>
+                  <p style={{ margin: 0, fontSize: "9.5px", color: "#64748b" }}>
+                    {docSettings?.phone ? `Phone: ${docSettings.phone}` : ""}
+                    {docSettings?.email ? ` · Email: ${docSettings.email}` : ""}
+                    {docSettings?.commercialReg ? ` · C.R: ${docSettings.commercialReg}` : ""}
+                    {docSettings?.trn ? ` · TRN: ${docSettings.trn}` : ""}
+                  </p>
                 </div>
               </div>
               <div className="tax-invoice-meta">
@@ -1168,7 +1306,7 @@ function WorkOrders(props: {
                 <tr>
                   <th style={{ textAlign: "left" }}>Description / Service</th>
                   <th style={{ textAlign: "center", width: "55px" }}>Qty</th>
-                  <th style={{ textAlign: "right", width: "115px" }}>Amount (QAR)</th>
+                  <th style={{ textAlign: "right", width: "115px" }}>Amount ({currencyCode})</th>
                 </tr>
               </thead>
               <tbody>

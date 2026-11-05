@@ -70,6 +70,21 @@ const getInvoiceById = async (req, res, next) => {
 const createInvoice = async (req, res, next) => {
   try {
     let invoiceId = req.body.invoiceId;
+    const workOrder = req.body.workOrder;
+    let existing = null;
+    if (invoiceId) {
+      existing = await Invoice.findOne(idQuery(invoiceId, 'invoiceId'));
+    }
+    if (!existing && workOrder && workOrder !== 'POS') {
+      existing = await Invoice.findOne({ workOrder });
+    }
+    if (existing) {
+      Object.assign(existing, req.body);
+      if (!req.body.invoiceId) existing.invoiceId = existing.invoiceId || invoiceId;
+      await existing.save();
+      return sendSuccess(res, existing, 'Invoice updated successfully', 200);
+    }
+
     if (!invoiceId || (await Invoice.exists({ invoiceId }))) {
       invoiceId = await generateId('invoice', 'INV', 5);
     }

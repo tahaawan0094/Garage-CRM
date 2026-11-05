@@ -58,6 +58,17 @@ export const authService = {
       throw new Error(data.message || 'Login failed.');
     }
     this.setCurrentUser(data.user);
+    if (data.settings) {
+      try {
+        localStorage.setItem('garage_crm_settings_v1', JSON.stringify(data.settings));
+        if (Array.isArray(data.services) && data.services.length > 0) {
+          localStorage.setItem('garage_crm_services_catalog_v1', JSON.stringify(data.services));
+        }
+        window.dispatchEvent(new CustomEvent('garage-settings-updated', { detail: data.settings }));
+      } catch (storageErr) {
+        console.warn('Could not cache cloud settings to localStorage:', storageErr);
+      }
+    }
     return data.user;
   },
 

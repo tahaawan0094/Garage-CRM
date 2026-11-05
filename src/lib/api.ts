@@ -501,3 +501,17 @@ export const reportsApi = {
     return res.data;
   },
 };
+
+// ─── SETTINGS API ───────────────────────────────────────────────────────────
+export const settingsApi = {
+  async get() {
+    return request<{ success: boolean; settings: any; services: any[] }>('/settings');
+  },
+
+  async save(settings: any, services?: any[]) {
+    return request<{ success: boolean; message: string; settings: any; services: any[] }>('/settings', {
+      method: 'POST',
+      body: JSON.stringify({ settings, services }),
+    });
+  },
+};

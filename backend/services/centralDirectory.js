@@ -38,6 +38,7 @@ const centralDirectory = {
             email: workshop.email || '',
             city: workshop.city || '',
             businessType: workshop.businessType || 'Auto Workshop / Garage',
+            logoUrl: workshop.logoUrl || '',
             license: workshop.license || { status: 'ACTIVATION_REQUIRED', licenseType: 'PERMANENT' },
             companyContact: workshop.companyContact || null,
             updatedAt: new Date(),
@@ -48,6 +49,24 @@ const centralDirectory = {
       console.log(`[CENTRAL_DIR] Workshop recorded in central cloud directory: ${workshop.businessName} [DB: ${workshop.databaseName}]`);
     } catch (err) {
       console.error('[CENTRAL_DIR] Failed to record workshop in central directory:', err.message);
+    }
+  },
+
+  async updateWorkshopSettings(businessId, settingsUpdate) {
+    try {
+      const db = getCentralDb();
+      if (!db || !businessId) return;
+      await db.collection('workshops').updateOne(
+        { businessId },
+        {
+          $set: {
+            ...settingsUpdate,
+            updatedAt: new Date(),
+          },
+        }
+      );
+    } catch (err) {
+      console.warn('[CENTRAL_DIR] Settings update notice:', err.message);
     }
   },
 

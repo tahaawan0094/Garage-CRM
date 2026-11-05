@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   X,
   Printer,
@@ -17,37 +18,70 @@ export const SalarySlipModal: React.FC<SalarySlipModalProps> = ({
   onClose,
   slip,
 }) => {
+  useEffect(() => {
+    if (!isOpen || !slip) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, slip, onClose]);
+
   if (!isOpen || !slip) return null;
 
   const handlePrint = () => {
     window.print();
   };
 
-  const money = (val: number) => `QAR ${Number(val || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const docSettings = React.useMemo(() => {
+    try {
+      const saved = localStorage.getItem("garage_crm_settings_v1");
+      return saved ? JSON.parse(saved) : null;
+    } catch (_) {
+      return null;
+    }
+  }, []);
 
-  return (
+  const currencyCode = docSettings?.currency || "USD";
+  const money = (val: number) => `${currencyCode} ${Number(val || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  return createPortal(
     <div
       className="modal-backdrop"
       style={{
         position: "fixed",
-        inset: 0,
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: "100vw",
+        height: "100vh",
+        margin: 0,
         backgroundColor: "rgba(15, 23, 42, 0.65)",
         backdropFilter: "blur(4px)",
+        WebkitBackdropFilter: "blur(4px)",
         zIndex: 999999,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         padding: "16px",
+        overflowY: "auto",
       }}
       onClick={onClose}
     >
       <div
         className="salary-slip-dialog"
         style={{
+          margin: "auto",
+          position: "relative",
+          flexShrink: 0,
           background: "#ffffff",
           borderRadius: "14px",
-          width: "100%",
-          maxWidth: "680px",
+          width: "min(650px, 92vw)",
+          maxWidth: "min(650px, 92vw)",
           maxHeight: "92vh",
           display: "flex",
           flexDirection: "column",
@@ -180,14 +214,18 @@ export const SalarySlipModal: React.FC<SalarySlipModalProps> = ({
                     letterSpacing: "-0.3px",
                   }}
                 >
-                  Doha Central Workshop & Service Hub
+                  {docSettings?.garageName || "Automotive Care & Workshop Facility"}
                 </h1>
               </div>
               <p style={{ margin: "4px 0 0", fontSize: "11px", color: "#64748b" }}>
-                Main Garage Facility • Bays 01–12, Street 24, Industrial Area, Doha, Qatar
+                {docSettings?.facilitySubtitle || docSettings?.address || "Main Garage Workshop & Service Facility"}
               </p>
               <p style={{ margin: "2px 0 0", fontSize: "11px", color: "#64748b" }}>
-                Tel: +974 4455 6677 • CR No: 994821 • accounts@garageworkspace.com
+                {[
+                  docSettings?.phone ? `Tel: ${docSettings.phone}` : null,
+                  docSettings?.crNumber ? `CR No: ${docSettings.crNumber}` : null,
+                  docSettings?.email || "support@garageworkspace.com",
+                ].filter(Boolean).join(" • ")}
               </p>
             </div>
 
@@ -462,6 +500,7 @@ export const SalarySlipModal: React.FC<SalarySlipModalProps> = ({
           </button>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

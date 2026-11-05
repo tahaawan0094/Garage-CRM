@@ -62,7 +62,14 @@ const getQuotationById = async (req, res, next) => {
 const createQuotation = async (req, res, next) => {
   try {
     let quotationId = req.body.quotationId;
-    if (!quotationId || quotationId === 'QT-00018' || (await Quotation.exists({ quotationId }))) {
+    if (quotationId) {
+      const existing = await Quotation.findOne(idQuery(quotationId, 'quotationId'));
+      if (existing) {
+        Object.assign(existing, req.body);
+        await existing.save();
+        return sendSuccess(res, existing, 'Quotation updated successfully', 200);
+      }
+    } else {
       quotationId = await generateId('quotation', 'QT', 5);
     }
     const quotation = new Quotation({ ...req.body, quotationId });

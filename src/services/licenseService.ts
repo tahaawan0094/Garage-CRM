@@ -38,12 +38,30 @@ export interface SystemStatusResponse {
   license: LicenseStatus;
 }
 
+function verifyLicenseExpiry(lic?: LicenseStatus): LicenseStatus | undefined {
+  if (!lic) return lic;
+  if (lic.license_type === 'DATED' && lic.expires_at) {
+    if (new Date(lic.expires_at).getTime() <= Date.now()) {
+      return {
+        ...lic,
+        status: 'EXPIRED',
+        accessAllowed: false,
+        message: 'License has expired. Please renew with Vertexia.',
+      };
+    }
+  }
+  return lic;
+}
+
 export const licenseService = {
   async getStatus(): Promise<SystemStatusResponse> {
     try {
       const res = await fetch(`${API_BASE}/license/status`);
       if (res.ok) {
         const data = await res.json();
+        if (data.license) {
+          data.license = verifyLicenseExpiry(data.license);
+        }
         if (data.isRegistered && data.registration) {
           localStorage.setItem('garage_registration_cache', JSON.stringify(data.registration));
         } else {
@@ -65,18 +83,18 @@ export const licenseService = {
     const cachedLicense = localStorage.getItem('garage_license_cache');
     if (cachedReg) {
       try {
+        const parsedLic = cachedLicense ? JSON.parse(cachedLicense) : null;
+        const verifiedLic = verifyLicenseExpiry(parsedLic) || {
+          status: 'ACTIVATION_REQUIRED',
+          accessAllowed: false,
+          message: 'Working offline with cached license.',
+        };
         return {
           success: true,
           isSetupCompleted: true,
           isRegistered: true,
           registration: JSON.parse(cachedReg),
-          license: cachedLicense
-            ? JSON.parse(cachedLicense)
-            : {
-                status: 'ACTIVATION_REQUIRED',
-                accessAllowed: false,
-                message: 'Working offline with cached license.',
-              },
+          license: verifiedLic,
         };
       } catch (_) {}
     }
@@ -151,9 +169,30 @@ export const licenseService = {
   },
 
   async reset(): Promise<any> {
-    localStorage.removeItem('garage_registration_cache');
-    localStorage.removeItem('garage_license_cache');
-    localStorage.removeItem('garage_crm_user_session_v1');
+    const keysToClear = [
+      'garage_registration_cache',
+      'garage_license_cache',
+      'garage_crm_user_session_v1',
+      'garage-pos-invoices',
+      'garage-pos-returns',
+      'garage_crm_mechanics_v1',
+      'garage_crm_mechanic_salaries_v1',
+      'garage_crm_invoices_cache',
+      'garage_crm_quotations_v1',
+      'garage_crm_parts_v1',
+      'garage_crm_workorders_v1',
+      'garage_crm_customers_v1',
+      'garage_crm_vehicles_v1',
+      'garage_crm_settings_v1',
+      'garage_pos_cart',
+      'garage-workorders',
+      'garage-customers',
+      'garage-vehicles',
+      'garage_receipt_number',
+      'garage_notifications_list',
+      'garage-recent-activities',
+    ];
+    keysToClear.forEach((k) => localStorage.removeItem(k));
     try {
       const res = await fetch(`${API_BASE}/license/reset`, { method: 'POST' });
       return await res.json();

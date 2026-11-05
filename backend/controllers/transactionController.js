@@ -71,19 +71,28 @@ const createTransaction = async (req, res, next) => {
     if (Array.isArray(transaction.items)) {
       for (const item of transaction.items) {
         if (item.type === 'Part') {
-          // Try to find matching part by name and deduct stock
-          const part = await Part.findOne({ name: { $regex: item.name, $options: 'i' } });
-          if (part && part.quantity >= item.quantity) {
+          // Try to find matching part by id / partId or name
+          let part = null;
+          if (item.productId) {
+            part = await Part.findOne(idQuery(item.productId, 'partId'));
+          }
+          if (!part && item.name) {
+            const escaped = item.name.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            part = await Part.findOne({ name: { $regex: new RegExp(`^${escaped}$`, 'i') } });
+          }
+          if (part) {
             const adjustedDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-            part.quantity -= item.quantity;
+            part.quantity = Math.max(0, (Number(part.quantity) || 0) - (Number(item.quantity) || 1));
             part.lastUpdated = adjustedDate;
-            part.activity.unshift({
-              date: adjustedDate,
-              type: 'Sold',
-              quantity: item.quantity,
-              reference: transactionId,
-              notes: `POS Sale to ${transaction.customer?.name || 'Customer'}`,
-            });
+            if (Array.isArray(part.activity)) {
+              part.activity.unshift({
+                date: adjustedDate,
+                type: 'Sold',
+                quantity: item.quantity,
+                reference: transactionId,
+                notes: `POS Sale to ${transaction.customer?.name || 'Customer'}`,
+              });
+            }
             await part.save();
           }
         }

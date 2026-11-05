@@ -1,73 +1,85 @@
 ; ==============================================================================
-; GARAGE CRM SUITE - INNO SETUP SCRIPT
+; GARAGE CRM SUITE - INNO SETUP INSTALLER SCRIPT
 ; ==============================================================================
-; Location: installer/setup.iss
-; Product:  Garage CRM Suite (Auto Care & Workshop Operations System)
-; Author:   Vertexia Tech Solutions
+; Built with the exact architecture of MedKit POS (Vertexia Desktop Suite)
+; Product:   Garage CRM Suite (Auto Care & Workshop Operations System)
+; Company:   Vertexia
+; Website:   https://www.vertexiaagency.com
+; Email:     support@vertexiaagency.com
+; Phone:     +92 317 2981931
 ; ==============================================================================
 
 #define MyAppName "Garage CRM Suite"
+#define MyAppPublisher "Vertexia"
 #define MyAppVersion "1.0.0"
-#define MyAppPublisher "Vertexia Tech Solutions"
-#define MyAppURL "https://vertexia.tech"
 #define MyAppExeName "Garage CRM Suite.exe"
-#define MyAppIcon "app.ico"
-#define MyAppLicense "LICENSE.txt"
+#define MyAppURL "https://www.vertexiaagency.com"
+#define MyPackageDir "..\desktop-release\win-unpacked"
 
 [Setup]
 AppId={{8B6E324A-95FC-4D63-B884-2195E05CE33B}}
 AppName={#MyAppName}
+LicenseFile=LICENSE.txt
 AppVersion={#MyAppVersion}
-AppVerName={#MyAppName} v{#MyAppVersion}
+AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 
+VersionInfoVersion=1.0.0.0
+VersionInfoCompany={#MyAppPublisher}
+VersionInfoDescription={#MyAppName} Installer
+VersionInfoProductName={#MyAppName}
+VersionInfoCopyright=Copyright (C) 2026 Vertexia
+
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
-AllowNoIcons=yes
-
-LicenseFile={#MyAppLicense}
-OutputDir=..\dist-installer
-OutputBaseFilename=Garage-CRM-Suite-Setup-v{#MyAppVersion}
-SetupIconFile={#MyAppIcon}
-UninstallDisplayIcon={app}\app.ico
-
-Compression=lzma2/ultra64
-SolidCompression=yes
-WizardStyle=modern
-WizardResizable=no
-DisableProgramGroupPage=auto
-
+PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-PrivilegesRequired=auto
-PrivilegesRequiredOverridesAllowed=dialog
+MinVersion=10.0
+DisableProgramGroupPage=yes
 
-[Languages]
-Name: "english"; MessagesFile: "compiler:Default.isl"
+OutputDir=..\dist-installer
+OutputBaseFilename=Garage-CRM-Setup
+Compression=lzma
+SolidCompression=yes
+WizardStyle=modern
+SetupIconFile=app.ico
+UninstallDisplayIcon={app}\{#MyAppExeName}
+UninstallDisplayName={#MyAppName}
+
+CloseApplications=yes
+CloseApplicationsFilter=*.exe,*.dll,*.node
+RestartApplications=no
+SetupLogging=yes
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
 
 [Files]
-Source: "app.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#MyPackageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
 
-; Packaged files from build directories
-Source: "..\release-build\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: DirExists(ExpandConstant('{src}\..\release-build'))
-Source: "..\dist-app\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: DirExists(ExpandConstant('{src}\..\dist-app'))
-Source: "..\dist\*"; DestDir: "{app}\dist"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: DirExists(ExpandConstant('{src}\..\dist'))
-Source: "..\backend\*"; DestDir: "{app}\backend"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: DirExists(ExpandConstant('{src}\..\backend'))
-Source: "..\public\*"; DestDir: "{app}\public"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: DirExists(ExpandConstant('{src}\..\public'))
-
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app.ico"; WorkingDir: "{app}"
-Name: "{group}\License Agreement"; Filename: "{app}\LICENSE.txt"
-Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app.ico"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent; Check: FileExists(ExpandConstant('{app}\{#MyAppExeName}'))
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
+[Code]
+var
+  PublisherLabel: TNewStaticText;
+
+procedure InitializeWizard;
+begin
+  PublisherLabel := TNewStaticText.Create(WizardForm);
+  PublisherLabel.Parent := WizardForm;
+  PublisherLabel.Caption := 'Powered by {#MyAppPublisher} - www.vertexiaagency.com';
+  PublisherLabel.Left := ScaleX(8);
+  PublisherLabel.Top := WizardForm.ClientHeight - ScaleY(20);
+  PublisherLabel.Font.Color := clGray;
+  PublisherLabel.Font.Size := 8;
+end;

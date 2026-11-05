@@ -15,6 +15,13 @@
     "keyHash": "29b09af2644437179a96e4e28a035157f897e992b689ff43fe9aeb3d18e4fd69",
     "receipt": "eyJ2ZXJzaW9uIjoxLCJwcm9kdWN0IjoibWVka2l0LXBvcyIsImJ1c2luZXNzSWQiOiJiaXpfZ2FyX212eHA2ZGg1X2JlMDJmMzVlIiwiZGV2aWNlSWQiOiJmMDQwNzE0ZTMxMzdlOTI0MmY3NDMzY2NhNmI1NmQ3N2IyNDIwYTcwMDY1MjRkMmUwODUwMDJlYWIxMzgzZDk0IiwibGljZW5zZUlkIjoiOWQ0YTZkYjUtMjlhYS00ZjJlLWE0MDYtYTA5MDRlNGEyMjhkIiwic3RhdHVzIjoiQUNUSVZFIiwiaXNzdWVkQXQiOjE3OTM1Mjk1NTcxNzIsInBlcm1hbmVudCI6ZmFsc2UsImV4cGlyZXNBdCI6MTgyNTI4NjM5OTk5OSwib2ZmbGluZVVudGlsIjoxNzk0MTM0MzU3MTcyLCJjb21wYW55TmFtZSI6IlZlcnRleGlhIn0.Q4kwFnszvBPrjsmpDSsF2ktJwDmD1ynieb13AYhXw7tkbBkTX0ArtmyNheIEzrF9pK_0mqmMF4vUESwjOhHwCg",
     "activatedAt": "2026-11-01T10:39:18.213Z",
-    "lastVerifiedAt": "2026-11-01T10:39:18.213Z"
+    "lastVerifiedAt": "2026-11-01T10:39:18.213Z",
+    "companyContact": {
+      "companyName": "Vertexia",
+      "phone": "+92 317 2981931",
+      "whatsapp": "+923172981931",
+      "email": "support@vertexiaagency.com",
+      "instructions": "Contact company support with your Registration ID to obtain or renew your license key."
+    }
   }
 }

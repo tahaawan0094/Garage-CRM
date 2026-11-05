@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { X, Plus, Box, Tag, Pencil, Coins } from "lucide-react";
 
 interface AddPartModalProps {
@@ -173,8 +174,6 @@ export default function AddPartModal({ isOpen, onClose, onSave, notify, initialD
     }
   }, [initialData, isOpen]);
 
-  if (!isOpen) return null;
-
   const handlePresetChange = (presetName: string) => {
     setSelectedPreset(presetName);
     if (!presetName) return;
@@ -224,19 +223,58 @@ export default function AddPartModal({ isOpen, onClose, onSave, notify, initialD
     }
   };
 
-  return (
-    <div className="view-info-backdrop" onClick={onClose} style={{ zIndex: 9999 }}>
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  return createPortal(
+    <div
+      className="view-info-backdrop"
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: "100vw",
+        height: "100vh",
+        margin: 0,
+        padding: "16px",
+        zIndex: 999999,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "rgba(15, 23, 42, 0.65)",
+        backdropFilter: "blur(4px)",
+        WebkitBackdropFilter: "blur(4px)",
+        overflowY: "auto",
+      }}
+    >
       <section
         className="view-info-modal-card"
         style={{
-          maxWidth: "980px",
-          width: "95vw",
+          margin: "auto",
+          maxWidth: "760px",
+          width: "min(760px, 92vw)",
           height: "auto",
           maxHeight: "92vh",
           display: "flex",
           flexDirection: "column",
           borderRadius: "8px",
           overflow: "hidden",
+          position: "relative",
+          flexShrink: 0,
         }}
         role="dialog"
         aria-modal="true"
@@ -726,6 +764,7 @@ export default function AddPartModal({ isOpen, onClose, onSave, notify, initialD
           </div>
         </form>
       </section>
-    </div>
+    </div>,
+    document.body
   );
 }

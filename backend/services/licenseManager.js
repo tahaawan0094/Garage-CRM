@@ -179,9 +179,9 @@ class LicenseManager {
             : 'Enter the license key provided by company to activate.',
         contact: reg.companyContact || {
           companyName: 'Vertexia',
-          phone: '+974 5511 2222',
-          whatsapp: '+97455112222',
-          email: 'support@vertexia.tech',
+          phone: '+92 317 2981931',
+          whatsapp: '+923172981931',
+          email: 'support@vertexiaagency.com',
           instructions: 'Contact company support with your Registration ID to obtain or renew your license key.',
         },
       },
@@ -216,9 +216,9 @@ class LicenseManager {
       isSetupCompleted: true,
       companyContact: {
         companyName: 'Vertexia',
-        phone: '+974 5511 2222',
-        whatsapp: '+97455112222',
-        email: 'support@vertexia.tech',
+        phone: '+92 317 2981931',
+        whatsapp: '+923172981931',
+        email: 'support@vertexiaagency.com',
         instructions: 'Contact company support with your Registration ID to obtain or renew your license key.',
       },
     };

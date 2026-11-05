@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   X,
   HardHat,
@@ -142,8 +143,6 @@ export const AddMechanicModal: React.FC<AddMechanicModalProps> = ({
     }
   }, [initialData, isOpen]);
 
-  if (!isOpen) return null;
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
@@ -194,29 +193,54 @@ export const AddMechanicModal: React.FC<AddMechanicModalProps> = ({
     }
   };
 
-  return (
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  return createPortal(
     <div
       className="modal-backdrop"
       style={{
         position: "fixed",
-        inset: 0,
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: "100vw",
+        height: "100vh",
+        margin: 0,
         backgroundColor: "rgba(15, 23, 42, 0.65)",
         backdropFilter: "blur(4px)",
+        WebkitBackdropFilter: "blur(4px)",
         zIndex: 999999,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         padding: "16px",
+        overflowY: "auto",
       }}
       onClick={onClose}
     >
       <div
         className="add-mechanic-dialog"
         style={{
+          margin: "auto",
+          position: "relative",
+          flexShrink: 0,
           background: "#ffffff",
           borderRadius: "14px",
-          width: "100%",
-          maxWidth: "720px",
+          width: "min(720px, 92vw)",
+          maxWidth: "min(720px, 92vw)",
           maxHeight: "92vh",
           display: "flex",
           flexDirection: "column",
@@ -347,7 +371,7 @@ export const AddMechanicModal: React.FC<AddMechanicModalProps> = ({
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
                   gap: "12px",
                 }}
               >
@@ -498,7 +522,7 @@ export const AddMechanicModal: React.FC<AddMechanicModalProps> = ({
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
                   gap: "12px",
                 }}
               >
@@ -633,7 +657,7 @@ export const AddMechanicModal: React.FC<AddMechanicModalProps> = ({
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
                   gap: "12px",
                 }}
               >
@@ -746,13 +770,13 @@ export const AddMechanicModal: React.FC<AddMechanicModalProps> = ({
             </div>
 
             {/* Section 4: Emergency Contact & Notes */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-                gap: "12px",
-              }}
-            >
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                  gap: "12px",
+                }}
+              >
               <div>
                 <label
                   style={{
@@ -870,6 +894,7 @@ export const AddMechanicModal: React.FC<AddMechanicModalProps> = ({
           </footer>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

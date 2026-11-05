@@ -67,6 +67,44 @@ router.post('/register', async (req, res) => {
       isActive: true,
     });
 
+    // 2.1. Seed initial workshop settings into tenant database
+    const Setting = require('../models/Setting');
+    await Setting.findOneAndUpdate(
+      {},
+      {
+        $set: {
+          garageName: businessName.trim(),
+          facilitySubtitle: `${city ? city.trim() + ' ' : ''}Workshop Facility`,
+          ownerName: ownerName.trim(),
+          ownerRole: 'Garage Owner',
+          phone: phone ? phone.trim() : '',
+          whatsapp: phone ? phone.trim() : '',
+          email: email ? email.trim() : '',
+          city: city ? city.trim() : '',
+          address: city ? city.trim() : '',
+          currency: 'USD',
+          operatingHours: 'Sat – Thu: 8:00 AM – 8:00 PM (Friday Closed)',
+          logoUrl: '',
+          taxRate: 0,
+          invoicePrefix: 'INV-',
+          workOrderPrefix: 'WO-',
+          quotationPrefix: 'QT-',
+          quotationValidityDays: 7,
+          paymentTerms: 'Due Upon Receipt',
+          showLogoOnPrint: true,
+          showSignatureLine: true,
+          showTaxBreakdown: false,
+          autoInvoiceOnApproval: true,
+          invoiceFooterNotes: `Thank you for choosing ${businessName.trim()}. All repairs carry workshop warranty.`,
+          gatePassDisclaimer: 'The vehicle has passed safety verification inspection and is authorized for release from workshop bays.',
+          printerMode: 'windows',
+          paperSize: '80mm',
+          autoPrint: true,
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
     // 3. Sync workshop profile & owner credentials into MongoDB Atlas Central Directory
     // This allows the owner & staff to log in from ANY other computer installing this app!
     await centralDirectory.recordWorkshop({

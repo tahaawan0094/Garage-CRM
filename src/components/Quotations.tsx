@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { quotationsApi, invoicesApi, workOrdersApi } from "../lib/api";
+import { quotationsApi, invoicesApi, workOrdersApi, mechanicsApi } from "../lib/api";
 import { getNextInvoiceId, commitInvoiceId } from "../lib/sequence";
 import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
 import { CustomDropdown } from "./CustomDropdown";
@@ -19,8 +19,6 @@ import {
   Search,
   Share2,
   Trash2,
-  UserRound,
-  Wrench,
   X,
 } from "lucide-react";
 
@@ -44,71 +42,6 @@ type Quote = {
 const LOCAL_STORAGE_QUOTES_KEY = "garage_crm_quotations_v1";
 
 const getTodayStr = () => new Date().toISOString().split("T")[0];
-const getYesterdayStr = () => {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().split("T")[0];
-};
-
-const defaultSeedQuotes: Quote[] = [
-  {
-    id: "QT-00018",
-    customer: "Vertexia Agency",
-    vehicle: "BMV Series 5",
-    year: "2023",
-    plate: "1217",
-    service: "Oil & Brake Service",
-    detail: "Full synthetic oil change and front ceramic brake pads",
-    status: "Pending",
-    date: getTodayStr(),
-    amount: 550,
-    advisor: "Ali Hassan",
-    items: [
-      { name: "Engine Oil 5W-40 (4L)", quantity: 1, unitPrice: 155 },
-      { name: "Oil Filter Bosch", quantity: 1, unitPrice: 55 },
-      { name: "Front Brake Pads", quantity: 1, unitPrice: 240 },
-      { name: "Labour - Oil & Brake Service", quantity: 1, unitPrice: 100 },
-    ],
-  },
-  {
-    id: "QT-00017",
-    customer: "Sheikh Ahmed",
-    vehicle: "Toyota Land Cruiser",
-    year: "2024",
-    plate: "8821",
-    service: "Comprehensive Service",
-    detail: "Periodic major service and multi-point safety check",
-    status: "Approved",
-    date: getYesterdayStr(),
-    amount: 1250,
-    advisor: "Ali Hassan",
-    items: [
-      { name: "Engine Oil 0W-20 (8L)", quantity: 2, unitPrice: 170 },
-      { name: "Transmission Fluid", quantity: 1, unitPrice: 195 },
-      { name: "Air & Cabin Filters", quantity: 2, unitPrice: 85 },
-      { name: "Labour - Full Service", quantity: 1, unitPrice: 545 },
-    ],
-  },
-  {
-    id: "QT-00016",
-    customer: "Hamad Al-Thani",
-    vehicle: "Porsche Cayenne",
-    year: "2022",
-    plate: "3390",
-    service: "AC System Overhaul",
-    detail: "AC compressor replacement & system gas charging",
-    status: "Awaiting Approval",
-    date: getYesterdayStr(),
-    amount: 2400,
-    advisor: "M. Khan",
-    items: [
-      { name: "AC Compressor OEM", quantity: 1, unitPrice: 1800 },
-      { name: "R134a Gas Refill", quantity: 1, unitPrice: 200 },
-      { name: "Labour Charges", quantity: 1, unitPrice: 400 },
-    ],
-  },
-];
-
 const statusClass: Record<QuoteStatus, string> = {
   "Awaiting Approval": "awaiting",
   Approved: "approved",
@@ -117,7 +50,6 @@ const statusClass: Record<QuoteStatus, string> = {
   Expired: "expired",
   Pending: "awaiting",
 };
-const money = (value: number) => `QAR ${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 function Quotations({
   notify,
@@ -128,6 +60,63 @@ function Quotations({
   refreshTrigger?: number;
   onSynced?: () => void;
 }) {
+  const [docSettings, setDocSettings] = useState<any>(() => {
+    try {
+      const saved = localStorage.getItem('garage_crm_settings_v1');
+      return saved ? JSON.parse(saved) : null;
+    } catch (_) { return null; }
+  });
+
+  const currencyCode = docSettings?.currency || "USD";
+  const money = (value: number) => `${currencyCode} ${(Number(value) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const [availableMechanics, setAvailableMechanics] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("garage_crm_mechanics_v1");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((m: any) => m.name || m.fullName).filter(Boolean);
+        }
+      }
+    } catch (_) {}
+    return [];
+  });
+
+  useEffect(() => {
+    const loadMechanics = () => {
+      try {
+        const saved = localStorage.getItem("garage_crm_mechanics_v1");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setAvailableMechanics(parsed.map((m: any) => m.name || m.fullName).filter(Boolean));
+            return;
+          }
+        }
+      } catch (_) {}
+      mechanicsApi
+        .getAll({ limit: 100 })
+        .then((res) => {
+          if (res.data && Array.isArray(res.data) && res.data.length > 0) {
+            setAvailableMechanics(res.data.map((m: any) => m.name || m.fullName).filter(Boolean));
+          } else {
+            setAvailableMechanics([]);
+          }
+        })
+        .catch(() => setAvailableMechanics([]));
+    };
+    loadMechanics();
+    window.addEventListener("garage_mechanics_updated", loadMechanics);
+    window.addEventListener("storage", loadMechanics);
+    window.addEventListener("focus", loadMechanics);
+    return () => {
+      window.removeEventListener("garage_mechanics_updated", loadMechanics);
+      window.removeEventListener("storage", loadMechanics);
+      window.removeEventListener("focus", loadMechanics);
+    };
+  }, []);
+
   const [quotes, setQuotes] = useState<Quote[]>(() => {
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_QUOTES_KEY);
@@ -136,7 +125,7 @@ function Quotations({
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch {}
-    return defaultSeedQuotes;
+    return [];
   });
   const [selectedId, setSelectedId] = useState("");
   const [page, setPage] = useState(1);
@@ -146,13 +135,6 @@ function Quotations({
   const [dateFilter, setDateFilter] = useState<DateFilterValue>({ type: 'today' });
   const [deleteModalQuote, setDeleteModalQuote] = useState<Quote | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-
-  const [docSettings, setDocSettings] = useState<any>(() => {
-    try {
-      const saved = localStorage.getItem('garage_crm_settings_v1');
-      return saved ? JSON.parse(saved) : null;
-    } catch (_) { return null; }
-  });
 
   useEffect(() => {
     const onSettings = (e: any) => {
@@ -177,7 +159,7 @@ function Quotations({
         if (Array.isArray(parsed)) localQuotes = parsed;
       }
     } catch {}
-    if (localQuotes.length === 0) localQuotes = defaultSeedQuotes;
+    // Do not force dummy seed quotes on fresh registrations
 
     quotationsApi.getAll({ limit: 100 })
       .then((res) => {
@@ -245,52 +227,69 @@ function Quotations({
     if (!target || (target.status !== "Awaiting Approval" && target.status !== "Pending")) return;
 
     setQuotes((current) => current.map((quote) => quote.id === targetId ? { ...quote, status: decision } : quote));
+    try {
+      const LOCAL_KEY = "garage_crm_quotations_v1";
+      const existing = localStorage.getItem(LOCAL_KEY);
+      if (existing) {
+        const parsed = JSON.parse(existing);
+        const updated = parsed.map((q: any) => q.id === targetId ? { ...q, status: decision } : q);
+        localStorage.setItem(LOCAL_KEY, JSON.stringify(updated));
+      }
+    } catch (_) {}
 
     // Sync approval/rejection to MongoDB Atlas
     if (decision === "Approved") {
       quotationsApi.approve(targetId).catch((err) => console.warn("Approve sync error:", err));
 
-      let createdInvoiceId: string | null = null;
-      if (docSettings?.autoInvoiceOnApproval !== false) {
-        const newInvId = getNextInvoiceId();
-        createdInvoiceId = newInvId;
-        commitInvoiceId(newInvId);
-        invoicesApi.create({
-          invoiceId: newInvId,
-          customer: target.customer,
-          vehicle: target.vehicle,
-          plate: target.plate || 'TBD',
-          year: target.year || '2024',
-          service: target.service,
-          detail: target.detail || '',
-          amount: target.amount,
-          total: target.amount,
-          status: 'Pending',
-          advisor: target.advisor || 'Ali Hassan',
-          date: new Date().toLocaleDateString('en-GB'),
-          items: target.items || [],
-          workOrder: target.id,
-        }).then(() => {
-          onSynced?.();
-        }).catch(err => console.warn("Invoice auto-creation sync error:", err));
+      const targetWoId = (target as any).workOrder || target.id;
+
+      // Update existing work order rather than creating a duplicate
+      if ((target as any).workOrder) {
+        workOrdersApi.update((target as any).workOrder, { status: 'In Progress' }).catch(() => {});
+      } else {
+        workOrdersApi.update(target.id.replace('QT-', 'WO-'), { status: 'In Progress' }).catch(() => {});
       }
 
-      workOrdersApi.update(target.id.replace('QT-', 'WO-'), { status: 'In Progress' }).catch(() => {
-        workOrdersApi.create({
-          workOrderId: target.id.replace('QT-', 'WO-'),
-          customer: target.customer,
-          vehicle: target.vehicle,
-          plate: target.plate || 'TBD',
-          year: target.year || '2024',
-          service: target.service,
-          detail: target.detail || '',
-          mechanic: target.advisor || 'Ali Hassan',
-          status: 'In Progress',
-          total: target.amount || 0,
-        }).catch(() => {});
-      });
-
-      notify(createdInvoiceId ? `Quotation ${targetId} approved! Invoice ${createdInvoiceId} created in Invoices.` : `Quotation ${targetId} approved!`);
+      // Check existing invoices to avoid duplicate invoice creation
+      if (docSettings?.autoInvoiceOnApproval !== false) {
+        invoicesApi.getAll({ limit: 100 }).then((res) => {
+          const existing = res.data?.find(
+            (inv: any) =>
+              (targetWoId && inv.workOrder === targetWoId) ||
+              inv.workOrder === target.id ||
+              inv.id === target.id
+          );
+          if (!existing) {
+            const newInvId = getNextInvoiceId();
+            commitInvoiceId(newInvId);
+            invoicesApi.create({
+              invoiceId: newInvId,
+              customer: target.customer,
+              vehicle: target.vehicle,
+              plate: target.plate || 'TBD',
+              year: target.year || '2024',
+              service: target.service,
+              detail: target.detail || '',
+              amount: target.amount,
+              total: target.amount,
+              status: 'Pending',
+              advisor: target.advisor || '',
+              date: new Date().toLocaleDateString('en-GB'),
+              items: target.items || [],
+              workOrder: targetWoId,
+            }).then(() => {
+              onSynced?.();
+              notify(`Quotation ${targetId} approved! Invoice ${newInvId} created in Invoices.`);
+            }).catch(err => console.warn("Invoice auto-creation sync error:", err));
+          } else {
+            notify(`Quotation ${targetId} approved! Linked to existing invoice ${existing.invoiceId || existing.id}.`);
+          }
+        }).catch(() => {
+          notify(`Quotation ${targetId} approved!`);
+        });
+      } else {
+        notify(`Quotation ${targetId} approved!`);
+      }
       onSynced?.();
     } else {
       quotationsApi.reject(targetId).catch((err) => console.warn("Reject sync error:", err));
@@ -353,12 +352,12 @@ function Quotations({
               value={advisorFilter}
               onChange={(val) => { setAdvisorFilter(val); setPage(1); }}
               ariaLabel="Filter by service advisor"
-              options={["All Service Advisors", "Ali Hassan", "M. Khan"]}
+              options={["All Service Advisors", ...availableMechanics]}
             />
           </div>
           <div className="quote-table-scroll">
             <table className="quote-management-table">
-              <thead><tr><th>#</th><th>Quote No.</th><th>Customer</th><th>Vehicle</th><th>Service Type</th><th>Status</th><th>Created Date</th><th>Total (QAR)</th><th>Actions</th></tr></thead>
+              <thead><tr><th>#</th><th>Quote No.</th><th>Customer</th><th>Vehicle</th><th>Service Type</th><th>Status</th><th>Created Date</th><th>Total ({currencyCode})</th><th>Actions</th></tr></thead>
               <tbody>
                 {pageQuotes.map((quote, index) => (
                   <tr key={quote.id} className={selectedQuote?.id === quote.id ? "selected" : ""} onClick={() => setSelectedId(quote.id)}>
@@ -368,7 +367,8 @@ function Quotations({
                     <td><span className="quote-vehicle-cell"><CarFront size={25} /><span>{quote.vehicle}<small>{quote.year} · {quote.plate}</small></span></span></td>
                     <td>{quote.service}<small className="quote-muted-line">{quote.detail}</small></td>
                     <td><span className={`quote-status-badge ${statusClass[quote.status]}`}>{quote.status}</span></td>
-                    <td>{quote.date}</td><td className="quote-amount">{money(quote.amount)}</td>                    <td>
+                    <td>{quote.date}</td><td className="quote-amount">{money(quote.amount)}</td>
+                    <td>
                       <button className="quote-row-view" aria-label={`View ${quote.id}`} onClick={(event) => { event.stopPropagation(); setSelectedId(quote.id); }}>
                         <Eye size={15} />
                       </button>
@@ -383,50 +383,303 @@ function Quotations({
         </section>
 
         {selectedQuote && (
-          <aside className="quote-detail-card" aria-label={`Quotation details for ${selectedQuote.id}`}>
-            <header><div><FileText size={16} /><strong>Quotation Details</strong></div><button onClick={() => notify("Quotation editing is not available in this frontend preview.")}><Pencil size={13} />Edit</button></header>
-            <div className="quote-detail-number"><strong>{selectedQuote.id}</strong><span className={`quote-status-badge ${statusClass[selectedQuote.status]}`}>{selectedQuote.status}</span></div>
-            <small className="quote-created-at">Created: {selectedQuote.date}, 10:30 AM</small>
-            <section className="quote-detail-block">
-              <h3><UserRound size={15} />Customer <button onClick={() => notify("Customer records are not available in this frontend preview.")}>View Customer</button></h3>
-              <strong>{selectedQuote.customer}</strong><span>{selectedQuote.plate}</span><span>{selectedQuote.customer.toLowerCase().replaceAll(" ", ".")}@email.com</span>
-            </section>
-            <section className="quote-detail-block">
-              <h3><CarFront size={16} />Vehicle</h3><strong>{selectedQuote.vehicle} - {selectedQuote.year}</strong><span>Plate: {selectedQuote.plate} · VIN: N/A</span>
-            </section>
-            <section className="quote-detail-block quote-service-info">
-              <h3><Wrench size={15} />Service Information</h3><div><span>Service Type</span><strong>{selectedQuote.service}</strong><span>Description</span><strong>{selectedQuote.detail}</strong></div><div><span>Service Advisor</span><strong>{selectedQuote.advisor}</strong><span>Expected Delivery</span><strong>16 Apr 2025</strong></div>
-            </section>
-            <section className="quote-detail-items">
-              <h3><FileText size={15} />Quotation Items ({selectedQuote.items.length} items)</h3>
-              <div className="quote-detail-table-scroll"><table><thead><tr><th>#</th><th>Item / Service</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead><tbody>
-                {selectedQuote.items.map((item, index) => <tr key={`${selectedQuote.id}-${item.name}`}><td>{index + 1}</td><td>{item.name}</td><td>{item.quantity}</td><td>{money(item.unitPrice)}</td><td>{money(item.quantity * item.unitPrice)}</td></tr>)}
-              </tbody></table></div>
-              <div className="quote-detail-totals">
-                <div><span>Subtotal</span><strong>{money(selectedQuote.amount)}</strong></div>
-                <div><span>VAT ({typeof docSettings?.taxRate === 'number' ? docSettings.taxRate : 0}%)</span><strong>{money((selectedQuote.amount * (typeof docSettings?.taxRate === 'number' ? docSettings.taxRate : 0)) / 100)}</strong></div>
-                <div><span>Discount (-)</span><strong className="negative">{money(0)}</strong></div>
-                <div className="grand"><strong>Grand Total</strong><strong>{money(selectedQuote.amount + ((selectedQuote.amount * (typeof docSettings?.taxRate === 'number' ? docSettings.taxRate : 0)) / 100))}</strong></div>
+          <aside className="intake-preview-card quote-paper-preview-aside" style={{ background: "#ffffff", borderRadius: "12px", border: "1px solid #e2e8f0", padding: "14px", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
+            {/* Top Preview Status Header */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: "10px",
+                padding: "8px 12px",
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+                borderRadius: "8px",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "7px", color: "#ff631c", fontWeight: 700, fontSize: "12px" }}>
+                <FileText size={15} />
+                <span>Quotation Document Preview</span>
               </div>
-            </section>
-            <div className="quote-detail-actions">
-              <button onClick={() => window.print()}><Printer size={14} />Reprint Quote</button>
-              <button onClick={() => {
-                if (navigator.clipboard) {
-                  navigator.clipboard.writeText(`${window.location.origin}/#quote-${selectedQuote.id}`);
-                }
-                notify(`Quotation link for ${selectedQuote.id} copied.`);
-              }}><Share2 size={14} />Share</button>
+              <span className={`quote-status-badge ${statusClass[selectedQuote.status]}`} style={{ margin: 0 }}>
+                {selectedQuote.status}
+              </span>
+            </div>
+
+            {/* Paper Document matching New Intake */}
+            <article className="intake-preview-paper" style={{ borderRadius: "8px", border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.03)", padding: "14px" }}>
+              <header className="intake-paper-header" style={{ alignItems: "flex-start", paddingTop: "0px", paddingBottom: "12px", borderBottom: "2px solid #0f172a" }}>
+                <div className="intake-paper-brand" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  {docSettings?.showLogoOnPrint !== false && docSettings?.logoUrl ? (
+                    <img
+                      src={
+                        docSettings.logoUrl.startsWith("data:")
+                          ? docSettings.logoUrl
+                          : `${import.meta.env.BASE_URL}${docSettings.logoUrl}`
+                      }
+                      alt="Company Logo"
+                      style={{ height: "46px", width: "auto", objectFit: "contain", display: "block" }}
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = "none";
+                      }}
+                    />
+                  ) : (
+                    <div style={{
+                      width: "42px",
+                      height: "42px",
+                      borderRadius: "8px",
+                      background: "linear-gradient(135deg, #0f172a, #1e293b)",
+                      color: "#f97316",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontWeight: 900,
+                      fontSize: "16px",
+                      border: "1px solid #334155"
+                    }}>
+                      {((docSettings?.garageName || "GC").substring(0, 2)).toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <strong style={{ fontSize: "14px", fontWeight: 800, color: "#0f172a", display: "block", lineHeight: 1.2 }}>
+                      {(docSettings?.garageName || "GARAGE WORKSHOP").toUpperCase()}
+                    </strong>
+                    <span style={{ fontSize: "10.5px", color: "#64748b", fontWeight: 500, display: "block", marginTop: "2px" }}>
+                      {docSettings?.facilitySubtitle || docSettings?.address || "Automotive Care & Diagnostics Center"}
+                    </span>
+                    {(docSettings?.phone || docSettings?.email || docSettings?.crNumber) && (
+                      <small style={{ fontSize: "9px", color: "#94a3b8", display: "block", marginTop: "2px" }}>
+                        {[
+                          docSettings?.phone ? `Tel: ${docSettings.phone}` : null,
+                          docSettings?.email ? `Email: ${docSettings.email}` : null,
+                          docSettings?.crNumber ? `C.R: ${docSettings.crNumber}` : null,
+                          docSettings?.taxNumber ? `Tax/TIN: ${docSettings.taxNumber}` : null,
+                        ].filter(Boolean).join(" · ")}
+                      </small>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <strong style={{ fontSize: "13px", fontWeight: 800, color: "#0f172a" }}>QUOTATION</strong>
+                  <b style={{ fontSize: "12px", color: "#1e293b" }}>{selectedQuote.id}</b>
+                  <span className={`intake-paper-status ${selectedQuote.status === "Approved" ? "approved" : selectedQuote.status === "Rejected" ? "rejected" : selectedQuote.status === "Draft" ? "" : "pending"}`}>
+                    {selectedQuote.status}
+                  </span>
+                  <small style={{ fontSize: "9.5px", color: "#64748b" }}>Date: {selectedQuote.date}</small>
+                  <small style={{ fontSize: "9.5px", color: "#64748b" }}>Valid Until: {selectedQuote.date} (+7 days)</small>
+                </div>
+              </header>
+
+              <div className="intake-paper-details" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", padding: "10px 0", borderBottom: "1px solid #e7ebf1" }}>
+                <section style={{ display: "flex", flexDirection: "column", gap: "3px", fontSize: "10px" }}>
+                  <h3 style={{ margin: "0 0 4px", fontSize: "10px", fontWeight: 700, color: "#475569" }}>Customer Details</h3>
+                  <strong style={{ fontSize: "11px", color: "#0f172a" }}>{selectedQuote.customer || "Walk-in Customer"}</strong>
+                  <span style={{ color: "#64748b" }}>{selectedQuote.plate || "No Mobile"}</span>
+                  <span style={{ color: "#64748b" }}>{selectedQuote.customer.toLowerCase().replaceAll(" ", ".")}@email.com</span>
+                </section>
+                <section style={{ display: "flex", flexDirection: "column", gap: "3px", fontSize: "10px" }}>
+                  <h3 style={{ margin: "0 0 4px", fontSize: "10px", fontWeight: 700, color: "#475569" }}>Vehicle Details</h3>
+                  <strong style={{ fontSize: "11px", color: "#0f172a" }}>{selectedQuote.vehicle || "Vehicle"}</strong>
+                  <span style={{ color: "#64748b" }}>Year: {selectedQuote.year || "—"}</span>
+                  <span style={{ color: "#64748b" }}>Plate No: {selectedQuote.plate || "—"}</span>
+                  <span style={{ color: "#64748b" }}>Service Advisor: {selectedQuote.advisor || "Unassigned"}</span>
+                </section>
+              </div>
+
+              <section className="intake-paper-complaint" style={{ padding: "9px 0", borderBottom: "1px solid #e7ebf1" }}>
+                <h3 style={{ margin: "0 0 4px", fontSize: "10px", fontWeight: 700, color: "#475569" }}>Customer Complaint / Service Scope</h3>
+                <p style={{ margin: 0, color: "#1e293b", fontSize: "10px", lineHeight: 1.4 }}>{selectedQuote.detail || selectedQuote.service || "General Automotive Inspection & Service"}</p>
+              </section>
+
+              <div className="intake-paper-table-wrap" style={{ marginTop: "8px" }}>
+                <table className="intake-paper-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: "9.5px" }}>
+                  <thead>
+                    <tr style={{ background: "#f8fafc" }}>
+                      <th style={{ padding: "6px 4px", borderBottom: "1px solid #e2e8f0" }}>#</th>
+                      <th style={{ padding: "6px 4px", borderBottom: "1px solid #e2e8f0" }}>Description</th>
+                      <th style={{ padding: "6px 4px", textAlign: "center", borderBottom: "1px solid #e2e8f0" }}>Qty</th>
+                      <th style={{ padding: "6px 4px", textAlign: "right", borderBottom: "1px solid #e2e8f0" }}>Unit Price ({currencyCode})</th>
+                      <th style={{ padding: "6px 4px", textAlign: "right", borderBottom: "1px solid #e2e8f0" }}>Total ({currencyCode})</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedQuote.items && selectedQuote.items.length > 0 ? (
+                      selectedQuote.items.map((item, index) => (
+                        <tr key={`${selectedQuote.id}-${item.name}-${index}`}>
+                          <td style={{ padding: "5px 4px", borderBottom: "1px solid #f1f5f9" }}>{index + 1}</td>
+                          <td style={{ padding: "5px 4px", borderBottom: "1px solid #f1f5f9", fontWeight: 600, color: "#1e293b" }}>{item.name}</td>
+                          <td style={{ padding: "5px 4px", textAlign: "center", borderBottom: "1px solid #f1f5f9" }}>{item.quantity}</td>
+                          <td style={{ padding: "5px 4px", textAlign: "right", borderBottom: "1px solid #f1f5f9" }}>{money(item.unitPrice).replace(/^[A-Za-z]+\s*/, '')}</td>
+                          <td style={{ padding: "5px 4px", textAlign: "right", borderBottom: "1px solid #f1f5f9", fontWeight: 600 }}>{money(item.quantity * item.unitPrice).replace(/^[A-Za-z]+\s*/, '')}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={5} style={{ padding: "8px 4px", textAlign: "center", color: "#64748b" }}>
+                          No specific line items entered.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Highlighted Total Amount Banner */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  background: "#fff0eb",
+                  padding: "10px 14px",
+                  borderRadius: "6px",
+                  margin: "12px 0 10px",
+                  border: "1px solid #ffd8c4",
+                }}
+              >
+                <strong style={{ color: "#ea580c", fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.02em" }}>
+                  Total Amount ({currencyCode})
+                </strong>
+                <strong style={{ color: "#ea580c", fontSize: "16px", fontWeight: 800 }}>
+                  {money(selectedQuote.amount)}
+                </strong>
+              </div>
+
+              {/* Notes */}
+              <section className="intake-paper-notes" style={{ padding: "6px 0", borderBottom: "1px solid #f1f5f9" }}>
+                <h3 style={{ margin: "0 0 4px", fontSize: "9.5px", fontWeight: 700, color: "#475569" }}>Notes</h3>
+                <p style={{ margin: 0, fontSize: "9px", color: "#64748b", lineHeight: 1.4 }}>• This is a quotation and not a tax invoice.</p>
+                <p style={{ margin: "2px 0 0", fontSize: "9px", color: "#64748b", lineHeight: 1.4 }}>• Valid for 7 days from issue date.</p>
+                <p style={{ margin: "2px 0 0", fontSize: "9px", color: "#64748b", lineHeight: 1.4 }}>• Service Advisor: {selectedQuote.advisor || "Unassigned"}</p>
+              </section>
+
+              {/* Signature Line */}
+              {docSettings?.showSignatureLine !== false && (
+                <div className="intake-paper-signature" style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "end", gap: "6px 10px", marginTop: "10px", fontSize: "9.5px" }}>
+                  <strong style={{ color: "#475569" }}>Customer Signature:</strong>
+                  <span style={{ gridColumn: "1 / -1", height: "32px", border: "1px dashed #cbd5e1", borderRadius: "4px" }} />
+                  <small style={{ gridColumn: "2", color: "#94a3b8" }}>Date: __________________</small>
+                </div>
+              )}
+            </article>
+
+            {/* Action buttons matching professional UI */}
+            <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                <button
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "6px",
+                    padding: "9px 12px",
+                    background: "#ff631c",
+                    color: "#ffffff",
+                    borderRadius: "8px",
+                    border: 0,
+                    fontWeight: 700,
+                    fontSize: "12px",
+                    cursor: "pointer",
+                    boxShadow: "0 2px 6px rgba(255, 99, 28, 0.25)"
+                  }}
+                  onClick={() => window.print()}
+                >
+                  <Printer size={15} />
+                  Print Quotation
+                </button>
+
+                <button
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "6px",
+                    padding: "9px 12px",
+                    background: "#f1f5f9",
+                    color: "#334155",
+                    borderRadius: "8px",
+                    border: "1px solid #cbd5e1",
+                    fontWeight: 600,
+                    fontSize: "12px",
+                    cursor: "pointer"
+                  }}
+                  onClick={() => {
+                    if (navigator.clipboard) {
+                      navigator.clipboard.writeText(`${window.location.origin}/#quote-${selectedQuote.id}`);
+                    }
+                    notify(`Quotation link for ${selectedQuote.id} copied.`);
+                  }}
+                >
+                  <Share2 size={14} />
+                  Share Link
+                </button>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                <button
+                  className="approve"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "6px",
+                    padding: "9px 12px",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    borderRadius: "8px",
+                    opacity: (selectedQuote.status !== "Awaiting Approval" && selectedQuote.status !== "Pending") ? 0.5 : 1,
+                    cursor: (selectedQuote.status !== "Awaiting Approval" && selectedQuote.status !== "Pending") ? "not-allowed" : "pointer"
+                  }}
+                  disabled={selectedQuote.status !== "Awaiting Approval" && selectedQuote.status !== "Pending"}
+                  onClick={() => decide("Approved")}
+                >
+                  <Check size={14} />
+                  Approve
+                </button>
+
+                <button
+                  className="reject"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "6px",
+                    padding: "9px 12px",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    borderRadius: "8px",
+                    opacity: (selectedQuote.status !== "Awaiting Approval" && selectedQuote.status !== "Pending") ? 0.5 : 1,
+                    cursor: (selectedQuote.status !== "Awaiting Approval" && selectedQuote.status !== "Pending") ? "not-allowed" : "pointer"
+                  }}
+                  disabled={selectedQuote.status !== "Awaiting Approval" && selectedQuote.status !== "Pending"}
+                  onClick={() => decide("Rejected")}
+                >
+                  <X size={14} />
+                  Reject
+                </button>
+              </div>
+
               <button
-                style={{ borderColor: "#fecaca", background: "#fff1f2", color: "#e11d48", fontWeight: 600 }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                  padding: "8px 12px",
+                  borderColor: "#fecaca",
+                  background: "#fff1f2",
+                  color: "#e11d48",
+                  borderRadius: "8px",
+                  border: "1px solid #fecaca",
+                  fontWeight: 600,
+                  fontSize: "11px",
+                  cursor: "pointer"
+                }}
                 onClick={() => setDeleteModalQuote(selectedQuote)}
               >
-                <Trash2 size={13} />Delete Quote
+                <Trash2 size={13} />
+                Delete Quote
               </button>
-            </div>
-            <div className="quote-decision-actions">
-              <button className="approve" disabled={selectedQuote.status !== "Awaiting Approval" && selectedQuote.status !== "Pending"} onClick={() => decide("Approved")}><Check size={14} />Approve</button>
-              <button className="reject" disabled={selectedQuote.status !== "Awaiting Approval" && selectedQuote.status !== "Pending"} onClick={() => decide("Rejected")}><X size={14} />Reject</button>
             </div>
           </aside>
         )}
@@ -439,24 +692,49 @@ function Quotations({
             {/* Quotation Slip Header */}
             <div className="tax-invoice-header">
               <div className="tax-invoice-brand" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                {docSettings?.showLogoOnPrint !== false && (
+                {docSettings?.showLogoOnPrint !== false && docSettings?.logoUrl ? (
                   <img
                     src={
-                      docSettings?.logoUrl?.startsWith("data:")
+                      docSettings.logoUrl.startsWith("data:")
                         ? docSettings.logoUrl
-                        : `${import.meta.env.BASE_URL}${docSettings?.logoUrl || "Garage-crm-logo-light.png"}`
+                        : `${import.meta.env.BASE_URL}${docSettings.logoUrl}`
                     }
                     alt="Company Logo"
                     style={{ height: "46px", width: "auto", objectFit: "contain" }}
                     onError={(e) => {
-                      (e.target as HTMLImageElement).src = `${import.meta.env.BASE_URL}Garage-crm-logo-light.png`;
+                      (e.target as HTMLElement).style.display = "none";
                     }}
                   />
+                ) : (
+                  <div style={{
+                    width: "44px",
+                    height: "44px",
+                    borderRadius: "8px",
+                    background: "linear-gradient(135deg, #0f172a, #1e293b)",
+                    color: "#f97316",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontWeight: 900,
+                    fontSize: "18px",
+                    border: "1px solid #334155"
+                  }}>
+                    {((docSettings?.garageName || "GC").substring(0, 2)).toUpperCase()}
+                  </div>
                 )}
                 <div>
-                  <h2>{(docSettings?.garageName || "DOHA CENTRAL WORKSHOP").toUpperCase()}</h2>
-                  <p>{docSettings?.facilitySubtitle || "Auto Care & Service Hub · Bays 01–12"} · {docSettings?.city || "Doha"}, {docSettings?.country || "Qatar"}</p>
-                  <p>Phone: {docSettings?.phone || "+974 5555 1234"} · C.R: {docSettings?.crNumber || "84920/1"}</p>
+                  <h2>{(docSettings?.garageName || "GARAGE WORKSHOP").toUpperCase()}</h2>
+                  <p>{docSettings?.facilitySubtitle || docSettings?.address || "Automotive Care & Diagnostics Center"}</p>
+                  {(docSettings?.phone || docSettings?.email || docSettings?.crNumber) && (
+                    <p>
+                      {[
+                        docSettings?.phone ? `Phone: ${docSettings.phone}` : null,
+                        docSettings?.email ? `Email: ${docSettings.email}` : null,
+                        docSettings?.crNumber ? `C.R: ${docSettings.crNumber}` : null,
+                        docSettings?.taxNumber ? `Tax/TIN: ${docSettings.taxNumber}` : null,
+                      ].filter(Boolean).join(" · ")}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="tax-invoice-meta">
@@ -474,7 +752,7 @@ function Quotations({
               <div>
                 <strong>Customer Details</strong>
                 <div className="party-name">{selectedQuote.customer}</div>
-                <div className="party-detail">Advisor: {selectedQuote.advisor || "Ali Hassan"}</div>
+                <div className="party-detail">Advisor: {selectedQuote.advisor || "Unassigned"}</div>
               </div>
               <div>
                 <strong>Vehicle Details</strong>
@@ -491,7 +769,7 @@ function Quotations({
                 <tr>
                   <th style={{ textAlign: "left", width: "60%" }}>Description / Item</th>
                   <th style={{ textAlign: "center", width: "15%" }}>Qty</th>
-                  <th style={{ textAlign: "right", width: "25%" }}>Amount (QAR)</th>
+                  <th style={{ textAlign: "right", width: "25%" }}>Amount ({currencyCode})</th>
                 </tr>
               </thead>
               <tbody>

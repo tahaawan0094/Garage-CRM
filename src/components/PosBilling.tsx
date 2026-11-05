@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertTriangle,
   Banknote,
@@ -455,12 +456,28 @@ export default function PosBilling({
       notify('Add at least one item to the invoice.');
       return;
     }
-    if (!customer.name.trim()) {
-      notify('Select a customer first.');
-      return;
+
+    // Default customer if empty
+    let activeCustomer = { ...customer };
+    if (!activeCustomer.name || !activeCustomer.name.trim()) {
+      activeCustomer = {
+        name: 'Walk-in Retail Customer',
+        phone: '',
+        vehicle: 'Over The Counter',
+        plate: '-',
+      };
+      setCustomer(activeCustomer);
     }
-    if (payment === 'Cash' && receivedValue < totals.total) {
-      notify(`Amount received is short by ${q(totals.total - receivedValue)}.`);
+
+    // Default received amount to exact total if cash and empty/zero
+    let finalReceived = receivedValue;
+    if (payment === 'Cash' && (!received.trim() || receivedValue <= 0)) {
+      finalReceived = totals.total;
+      setReceived(String(totals.total));
+    }
+
+    if (payment === 'Cash' && finalReceived < totals.total) {
+      notify(`Amount received is short by ${q(totals.total - finalReceived)}.`);
       return;
     }
 
@@ -476,12 +493,11 @@ export default function PosBilling({
     commitInvoiceId(invoiceId);
     const invoice: Invoice = {
       id: invoiceId,
-      customer: { ...customer },
+      customer: { ...activeCustomer },
       items: cart.map((item) => ({ ...item })),
       total: totals.total,
       payment,
       date: new Date().toLocaleString('en-GB', {
-        timeZone: 'Asia/Qatar',
         dateStyle: 'medium',
         timeStyle: 'short',
       }),
@@ -494,31 +510,64 @@ export default function PosBilling({
     } catch {
       notify('Invoice created for this session; browser storage is unavailable.');
     }
+    window.dispatchEvent(new CustomEvent('garage_pos_invoices_updated'));
 
-    // Immediate local stock decrement
-    setInventoryParts((prev) =>
-      prev.map((p) => {
-        const cartItem = cart.find(
-          (ci) => String(ci.productId) === String(p.id) || String(ci.productId) === String(p.partId)
+    // Persistent stock decrement in localStorage & state
+    let currentStoredParts: any[] = [];
+    try {
+      const savedParts = localStorage.getItem('garage_crm_parts_inventory_v1');
+      if (savedParts) currentStoredParts = JSON.parse(savedParts);
+    } catch {}
+    if (!currentStoredParts.length) currentStoredParts = inventoryParts;
+
+    const updatedParts = currentStoredParts.map((p) => {
+      const cartItem = cart.find((ci) => {
+        const prod = productFor(ci);
+        return (
+          String(ci.productId) === String(p.id) ||
+          String(ci.productId) === String(p.partId) ||
+          (prod.name && p.name && prod.name.trim().toLowerCase() === p.name.trim().toLowerCase())
         );
-        if (cartItem) {
-          return {
-            ...p,
-            quantity: Math.max(0, (Number(p.quantity) || 0) - cartItem.quantity),
-          };
-        }
-        return p;
-      })
-    );
+      });
+      if (cartItem) {
+        const currentQty = Number(p.quantity ?? p.stock ?? 0);
+        const newQty = Math.max(0, currentQty - cartItem.quantity);
+        return {
+          ...p,
+          quantity: newQty,
+          stock: newQty,
+        };
+      }
+      return p;
+    });
+
+    setInventoryParts(updatedParts);
+    try {
+      localStorage.setItem('garage_crm_parts_inventory_v1', JSON.stringify(updatedParts));
+    } catch {}
+
+    // Dispatch global event so New Intake and Parts Inventory instantly reflect the new stock
+    window.dispatchEvent(new CustomEvent('garage_parts_updated', { detail: updatedParts }));
+
+    // Update backend MongoDB inventory stock for each part
+    cart.forEach((item) => {
+      const prod = productFor(item);
+      const targetPart = updatedParts.find(
+        (p) => String(p.id) === String(item.productId) || String(p.partId) === String(item.productId) || (p.name && prod.name && p.name.trim().toLowerCase() === prod.name.trim().toLowerCase())
+      );
+      if (targetPart && (targetPart.id || targetPart.partId)) {
+        partsApi.update(targetPart.id || targetPart.partId, { quantity: targetPart.quantity }).catch(() => {});
+      }
+    });
 
     // Save invoice to backend database as well
     invoicesApi
       .create({
         invoiceId: invoiceId,
-        customer: customer.name || 'Direct Customer',
-        phone: customer.phone || '',
-        vehicle: customer.vehicle || 'Over The Counter',
-        plate: customer.plate || '-',
+        customer: activeCustomer.name || 'Walk-in Retail Customer',
+        phone: activeCustomer.phone || '',
+        vehicle: activeCustomer.vehicle || 'Over The Counter',
+        plate: activeCustomer.plate || '-',
         year: '2024',
         service: 'Parts Sale (POS)',
         detail: `${cart.length} inventory part(s) sold over-the-counter`,
@@ -546,7 +595,7 @@ export default function PosBilling({
     transactionsApi
       .create({
         transactionId: invoiceId,
-        customer: { ...customer },
+        customer: { ...activeCustomer },
         items: cart.map((item) => {
           const product = productFor(item);
           return {
@@ -787,7 +836,7 @@ export default function PosBilling({
       </div>
 
       {/* POS Top Navigation: Parts Sale vs Returns & Refunds */}
-      <div className="tabs" role="tablist" style={{ margin: '14px 0 16px' }}>
+      <div className="tabs no-print" role="tablist" style={{ margin: '14px 0 16px' }}>
         <button
           type="button"
           role="tab"
@@ -1645,10 +1694,33 @@ export default function PosBilling({
       )}
 
       {/* Invoice Details Modal */}
-      {receipt && (
-        <div className="modal-backdrop receipt-backdrop" onClick={() => setReceipt(null)}>
+      {receipt && createPortal(
+        <div
+          className="modal-backdrop receipt-backdrop"
+          onClick={() => setReceipt(null)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: '100vw',
+            height: '100vh',
+            margin: 0,
+            padding: '16px',
+            zIndex: 999999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
+            overflowY: 'auto',
+          }}
+        >
           <section
             className="modal receipt"
+            style={{ margin: 'auto', position: 'relative', flexShrink: 0 }}
             role="dialog"
             aria-modal="true"
             aria-label={`Invoice ${receipt.id}`}
@@ -1716,14 +1788,38 @@ export default function PosBilling({
               </button>
             </div>
           </section>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Credit Note / Return Modal */}
-      {activeReturnSlip && (
-        <div className="modal-backdrop receipt-backdrop" onClick={() => setActiveReturnSlip(null)}>
+      {activeReturnSlip && createPortal(
+        <div
+          className="modal-backdrop receipt-backdrop"
+          onClick={() => setActiveReturnSlip(null)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: '100vw',
+            height: '100vh',
+            margin: 0,
+            padding: '16px',
+            zIndex: 999999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
+            overflowY: 'auto',
+          }}
+        >
           <section
             className="modal receipt"
+            style={{ margin: 'auto', position: 'relative', flexShrink: 0 }}
             role="dialog"
             aria-modal="true"
             aria-label={`Credit Note ${activeReturnSlip.returnId}`}
@@ -1739,14 +1835,14 @@ export default function PosBilling({
               <img src={`${import.meta.env.BASE_URL}Garage-crm-logo.png`} alt="Garage CRM" />
               <div>
                 <h3 style={{ color: '#dc2626' }}>PARTS RETURN VOUCHER</h3>
-                <p>Credit Note · Doha Central Workshop</p>
+                <p>Credit Note · {docSettings?.garageName || 'Automotive Care & Workshop'}</p>
               </div>
             </div>
             <p className="receipt-state" style={{ color: '#dc2626' }}>
               <RotateCcw size={17} />
               Return Processed &amp; Inventory Restocked
             </p>
-            <p className="receipt-meta-line">{activeReturnSlip.date} · Qatar time</p>
+            <p className="receipt-meta-line">{activeReturnSlip.date} · Local time</p>
             <div className="receipt-cust-box">
               <strong>{activeReturnSlip.customer}</strong>
               <p>Original Invoice: #{activeReturnSlip.invoiceId} · Reason: {activeReturnSlip.reason}</p>
@@ -1776,7 +1872,8 @@ export default function PosBilling({
               </button>
             </div>
           </section>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Direct Clean Print Document (Hidden on screen, 100% visible and formatted in Print) */}
@@ -1801,9 +1898,15 @@ export default function PosBilling({
                     />
                   )}
                   <div>
-                    <h2>{(docSettings?.garageName || 'DOHA CENTRAL GARAGE & AUTO PARTS').toUpperCase()}</h2>
-                    <p>{docSettings?.facilitySubtitle || 'Industrial Area, Street 15, Doha - Qatar'} | Tel: {docSettings?.phone || '+974 4455 6677'}</p>
-                    <p>Tax Reg. (TRN): {docSettings?.taxNumber || 'QTR-VAT-9021884'} | Commercial Reg: {docSettings?.crNumber || '10293847'}</p>
+                    <h2>{(docSettings?.garageName || 'GARAGE WORKSHOP').toUpperCase()}</h2>
+                    <p>
+                      {docSettings?.facilitySubtitle || docSettings?.address || 'Premier Automotive Care & Service Center'}
+                      {docSettings?.phone ? ` | Tel: ${docSettings.phone}` : ''}
+                    </p>
+                    <p>
+                      {docSettings?.taxNumber ? `Tax Reg. (TRN): ${docSettings.taxNumber}` : ''}
+                      {docSettings?.commercialReg || docSettings?.crNumber ? ` | Commercial Reg: ${docSettings.commercialReg || docSettings.crNumber}` : ''}
+                    </p>
                   </div>
                 </div>
                 <div className="pos-print-badge-box">
@@ -1930,9 +2033,15 @@ export default function PosBilling({
                     />
                   )}
                   <div>
-                    <h2>{(docSettings?.garageName || 'DOHA CENTRAL GARAGE & AUTO PARTS').toUpperCase()}</h2>
-                    <p>{docSettings?.facilitySubtitle || 'Industrial Area, Street 15, Doha - Qatar'} | Tel: {docSettings?.phone || '+974 4455 6677'}</p>
-                    <p>Tax Reg. (TRN): {docSettings?.taxNumber || 'QTR-VAT-9021884'} | Commercial Reg: {docSettings?.crNumber || '10293847'}</p>
+                    <h2>{(docSettings?.garageName || 'GARAGE WORKSHOP').toUpperCase()}</h2>
+                    <p>
+                      {docSettings?.facilitySubtitle || docSettings?.address || 'Premier Automotive Care & Service Center'}
+                      {docSettings?.phone ? ` | Tel: ${docSettings.phone}` : ''}
+                    </p>
+                    <p>
+                      {docSettings?.taxNumber ? `Tax Reg. (TRN): ${docSettings.taxNumber}` : ''}
+                      {docSettings?.commercialReg || docSettings?.crNumber ? ` | Commercial Reg: ${docSettings.commercialReg || docSettings.crNumber}` : ''}
+                    </p>
                   </div>
                 </div>
                 <div className="pos-print-badge-box">

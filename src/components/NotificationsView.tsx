@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import {
   Bell,
   Check,
@@ -68,8 +68,6 @@ export function NotificationsView({
   onMarkUnread,
   onMarkAllRead,
   onNavigate,
-  onRefresh,
-  notify,
 }: NotificationsViewProps) {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All Categories');

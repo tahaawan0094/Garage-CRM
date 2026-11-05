@@ -25,7 +25,6 @@ import {
   ChevronDown,
   ClipboardList,
   Clock,
-  Download,
   FileText,
   History,
   Printer,
@@ -283,8 +282,7 @@ const vehicleFields: (keyof VehicleFormData)[] = [
   "notes",
 ];
 
-const documentTypes = ["Quotation", "Gate Pass"] as const;
-type DocumentType = (typeof documentTypes)[number];
+type DocumentType = "Quotation";
 
 function isIntakeFormData(value: unknown): value is IntakeFormData {
   if (typeof value !== "object" || value === null) {
@@ -514,15 +512,15 @@ function NewIntake(props: {
       const saved = localStorage.getItem("garage_crm_mechanics_v1");
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           return parsed.map((m: any) => m.name).filter(Boolean);
         }
       }
     } catch {}
-    return ["Ali Hassan", "M. Khan", "Ahmed Raza", "Bilal Khan"];
+    return [];
   });
   const [labourService, setLabourService] = useState("");
-  const [labourMechanic, setLabourMechanic] = useState("Ali Hassan");
+  const [labourMechanic, setLabourMechanic] = useState("");
   const [labourAmount, setLabourAmount] = useState("");
   const [additionalName, setAdditionalName] = useState("");
   const [additionalAmount, setAdditionalAmount] = useState("");
@@ -568,26 +566,37 @@ function NewIntake(props: {
   });
 
   useEffect(() => {
-    // Dynamic mechanics loader
+    // Dynamic mechanics loader - only show workers from user's registered mechanic section
     const loadMechanics = () => {
       try {
         const saved = localStorage.getItem("garage_crm_mechanics_v1");
         if (saved) {
           const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) {
+          if (Array.isArray(parsed)) {
             const names = parsed.map((m: any) => m.name).filter(Boolean);
-            if (names.length > 0) setAvailableMechanics(names);
+            setAvailableMechanics(names);
           }
+        } else {
+          setAvailableMechanics([]);
         }
       } catch {}
 
       if (typeof mechanicsApi !== "undefined" && mechanicsApi?.getAll) {
         mechanicsApi.getAll({ limit: 100 }).then((res) => {
-          if (res.data && res.data.length > 0) {
+          if (res?.data && Array.isArray(res.data)) {
             const names = res.data.map((m: any) => m.name).filter(Boolean);
-            if (names.length > 0) {
-              setAvailableMechanics(names);
-            }
+            setAvailableMechanics(names);
+            setForm(prev => ({
+              ...prev,
+              advisor: names.includes(prev.advisor) ? prev.advisor : "",
+              mechanic: names.includes(prev.mechanic) ? prev.mechanic : "",
+            }));
+            try {
+              localStorage.setItem("garage_crm_mechanics_v1", JSON.stringify(res.data));
+            } catch (_) {}
+          } else if (res?.data && res.data.length === 0) {
+            setAvailableMechanics([]);
+            setForm(prev => ({ ...prev, advisor: "", mechanic: "" }));
           }
         }).catch(() => {});
       }
@@ -616,6 +625,8 @@ function NewIntake(props: {
     loadParts();
 
     window.addEventListener("garage_mechanics_updated", loadMechanics);
+    window.addEventListener("storage", loadMechanics);
+    window.addEventListener("focus", loadMechanics);
     window.addEventListener("garage_parts_updated", loadParts);
 
     workOrdersApi.getAll({ limit: 100 }).then((res) => {
@@ -663,6 +674,8 @@ function NewIntake(props: {
 
     return () => {
       window.removeEventListener("garage_mechanics_updated", loadMechanics);
+      window.removeEventListener("storage", loadMechanics);
+      window.removeEventListener("focus", loadMechanics);
       window.removeEventListener("garage_parts_updated", loadParts);
       window.removeEventListener("garage-settings-updated", onSettings);
       window.removeEventListener("garage_services_updated", onServices);
@@ -991,7 +1004,7 @@ function NewIntake(props: {
     setPartOriginalPrice("");
     setPartCommission("");
     setLabourService("");
-    setLabourMechanic("M. Khan");
+    setLabourMechanic("");
     setLabourAmount("");
     setAdditionalName("");
     setAdditionalAmount("");
@@ -1038,8 +1051,9 @@ function NewIntake(props: {
   const additionalTotal = additionalCharges.reduce((total, charge) => total + charge.amount, 0);
   const quotationSubtotal = partsTotal + labourTotal + additionalTotal;
   const quotationTotal = Math.max(0, quotationSubtotal - Math.min(quotationDiscount, quotationSubtotal));
+  const currencyCode = docSettings?.currency || "USD";
   const currency = (amount: number) =>
-    `QAR ${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    `${currencyCode} ${(Number(amount) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const quotePreviewItems = [
     ...externalParts.map((part) => ({
       description: part.name,
@@ -1197,6 +1211,7 @@ function NewIntake(props: {
     const newQuoteRecord = {
       id: quoteNumber || `QT-${Math.floor(10000 + Math.random() * 90000)}`,
       quotationId: quoteNumber,
+      workOrder: form.workOrder,
       customer: customer.name || 'Customer',
       vehicle: vehicle.carName || `${vehicle.make} ${vehicle.model}`.trim() || 'Vehicle',
       plate: vehicle.plateNumber || 'TBD',
@@ -1205,7 +1220,7 @@ function NewIntake(props: {
       detail: selectedComplaints.join(', ') || complaint || 'General Service',
       amount: quotationTotal,
       status: dbStatus as any,
-      advisor: form.advisor || 'Ali Hassan',
+      advisor: form.advisor || availableMechanics[0] || '',
       date: quoteEffectiveDate,
       items: quoteItems,
     };
@@ -1234,61 +1249,86 @@ function NewIntake(props: {
       commitQuotationId(quoteNumber);
       if (docSettings?.autoInvoiceOnApproval !== false) {
         try {
-          const autoInvId = getNextInvoiceId();
-          commitInvoiceId(autoInvId);
-          invoicesApi.create({
-            invoiceId: autoInvId,
-            customer: customer.name || 'Customer',
-            phone: customer.mobile || customer.phone || '',
-            vehicle: vehicle.carName || `${vehicle.make} ${vehicle.model}`.trim() || 'Vehicle',
-            plate: vehicle.plateNumber || 'TBD',
-            year: vehicle.year || '2024',
-            service: selectedServices[0] || 'General Service',
-            amount: quotationTotal || 0,
-            total: quotationTotal || 0,
-            status: 'Pending',
-            advisor: form.advisor || 'Ali Hassan',
-            date: new Date().toLocaleDateString('en-GB'),
-            items: quoteItems,
-            workOrder: form.workOrder,
-          }).catch(invErr => console.warn("Auto invoice sync error:", invErr));
+          const invRes = await invoicesApi.getAll({ limit: 100 });
+          const existingInv = invRes.data?.find(
+            (inv: any) =>
+              (form.workOrder && inv.workOrder === form.workOrder) ||
+              inv.workOrder === quoteNumber ||
+              inv.id === quoteNumber
+          );
+          if (existingInv) {
+            await invoicesApi.update(existingInv.id || existingInv.invoiceId, {
+              amount: quotationTotal || 0,
+              total: quotationTotal || 0,
+              items: quoteItems,
+              status: existingInv.status || 'Pending',
+            });
+          } else {
+            const autoInvId = getNextInvoiceId();
+            commitInvoiceId(autoInvId);
+            await invoicesApi.create({
+              invoiceId: autoInvId,
+              customer: customer.name || 'Customer',
+              phone: customer.mobile || customer.phone || '',
+              vehicle: vehicle.carName || `${vehicle.make} ${vehicle.model}`.trim() || 'Vehicle',
+              plate: vehicle.plateNumber || 'TBD',
+              year: vehicle.year || '2024',
+              service: selectedServices[0] || 'General Service',
+              amount: quotationTotal || 0,
+              total: quotationTotal || 0,
+              status: 'Pending',
+              advisor: form.advisor || availableMechanics[0] || '',
+              date: new Date().toLocaleDateString('en-GB'),
+              items: quoteItems,
+              workOrder: form.workOrder,
+            });
+          }
         } catch (e) {
           console.warn("Auto invoice creation failed:", e);
         }
       }
       try {
-        await workOrdersApi.create({
-          workOrderId: form.workOrder,
-          customer: customer.name || 'Customer',
-          customerPhone: customer.mobile || customer.phone || '',
-          vehicle: vehicle.carName || `${vehicle.make} ${vehicle.model}`.trim() || 'Vehicle',
-          plate: vehicle.plateNumber || 'TBD',
-          year: vehicle.year || '2024',
-          service: selectedServices[0] || 'General Service',
-          detail: selectedComplaints.join(', ') || complaint || 'Service',
-          mechanic: form.mechanic || 'Ali Hassan',
-          status: 'In Progress',
-          total: quotationTotal || 0,
-          subtotal: quotationSubtotal || 0,
-          discount: quotationDiscount || 0,
-          externalParts: externalParts.map((p) => ({
-            name: p.name,
-            supplier: p.supplier || '',
-            originalPrice: p.originalPrice || 0,
-            commission: p.commission || 0,
-          })),
-          labourCharges: labourCharges.map((l) => ({
-            service: l.service,
-            mechanic: l.mechanic || 'Ali Hassan',
-            amount: l.amount || 0,
-            hours: l.hours || 1,
-            rate: l.rate || 0,
-          })),
-          additionalCharges: additionalCharges.map((a) => ({
-            name: a.name,
-            amount: a.amount || 0,
-          })),
-        });
+        try {
+          await workOrdersApi.update(form.workOrder, {
+            status: 'In Progress',
+            total: quotationTotal || 0,
+            subtotal: quotationSubtotal || 0,
+            discount: quotationDiscount || 0,
+          });
+        } catch (_) {
+          await workOrdersApi.create({
+            workOrderId: form.workOrder,
+            customer: customer.name || 'Customer',
+            customerPhone: customer.mobile || customer.phone || '',
+            vehicle: vehicle.carName || `${vehicle.make} ${vehicle.model}`.trim() || 'Vehicle',
+            plate: vehicle.plateNumber || 'TBD',
+            year: vehicle.year || '2024',
+            service: selectedServices[0] || 'General Service',
+            detail: selectedComplaints.join(', ') || complaint || 'Service',
+            mechanic: form.mechanic || availableMechanics[0] || '',
+            status: 'In Progress',
+            total: quotationTotal || 0,
+            subtotal: quotationSubtotal || 0,
+            discount: quotationDiscount || 0,
+            externalParts: externalParts.map((p) => ({
+              name: p.name,
+              supplier: p.supplier || '',
+              originalPrice: p.originalPrice || 0,
+              commission: p.commission || 0,
+            })),
+            labourCharges: labourCharges.map((l) => ({
+              service: l.service,
+              mechanic: l.mechanic || form.mechanic || availableMechanics[0] || '',
+              amount: l.amount || 0,
+              hours: l.hours || 1,
+              rate: l.rate || 0,
+            })),
+            additionalCharges: additionalCharges.map((a) => ({
+              name: a.name,
+              amount: a.amount || 0,
+            })),
+          });
+        }
       } catch (err) {
         console.warn("Work order sync error:", err);
       }
@@ -1296,9 +1336,9 @@ function NewIntake(props: {
       try {
         window.localStorage.removeItem("garage-intake-draft");
       } catch (_) {}
-      resetForm(false);
+      setQuotationStatus("Approved");
       onSynced();
-      notify("Quotation approved! Synced to Customers, Vehicles, Quotations, and Work Orders.");
+      notify("Quotation approved! You can now print the quotation slip or click '+ New Entry' to start another intake.");
     } else if (status === "Pending") {
       commitWorkOrderId(form.workOrder);
       try {
@@ -1311,7 +1351,7 @@ function NewIntake(props: {
           year: vehicle.year || '2024',
           service: selectedServices[0] || 'General Service',
           detail: selectedComplaints.join(', ') || complaint || 'Service',
-          mechanic: form.mechanic || 'Ali Hassan',
+          mechanic: form.mechanic || availableMechanics[0] || '',
           status: 'Pending',
           total: quotationTotal || 0,
           subtotal: quotationSubtotal || 0,
@@ -1324,7 +1364,7 @@ function NewIntake(props: {
           })),
           labourCharges: labourCharges.map((l) => ({
             service: l.service,
-            mechanic: l.mechanic || 'Ali Hassan',
+            mechanic: l.mechanic || form.mechanic || availableMechanics[0] || '',
             amount: l.amount || 0,
             hours: l.hours || 1,
             rate: l.rate || 0,
@@ -1341,14 +1381,14 @@ function NewIntake(props: {
       try {
         window.localStorage.removeItem("garage-intake-draft");
       } catch (_) {}
-      resetForm(false);
+      setQuotationStatus("Pending");
       onSynced();
-      notify("Quotation saved as Pending! Synced to Customers, Vehicles, Quotations, and Work Orders.");
+      notify("Quotation saved as Pending! You can now print the quotation or click '+ New Entry' to start another intake.");
     } else {
       try {
         window.localStorage.removeItem("garage-intake-draft");
       } catch (_) {}
-      resetForm(false);
+      setQuotationStatus("Rejected");
       onSynced();
       notify("Quotation rejected and saved in Quotations.");
     }
@@ -1372,7 +1412,7 @@ function NewIntake(props: {
         plate: vehicle.plateNumber || 'TBD',
         year: vehicle.year || '2024',
         service: selectedServices[0] || 'General Service',
-        mechanic: form.mechanic || 'Ali Hassan',
+        mechanic: form.mechanic || availableMechanics[0] || '',
         status: 'Ready for Delivery',
         total: quotationTotal || 0,
       }).catch(err => console.warn("Work order completion sync error:", err));
@@ -1402,22 +1442,51 @@ function NewIntake(props: {
     setPaymentReference("");
     notify("Payment recorded on this device.");
 
-    invoicesApi.create({
-      invoiceId: invoiceNumber,
-      customer: customer.name || 'Customer',
-      phone: customer.mobile || customer.phone || '',
-      email: customer.email || '',
-      vehicle: `${vehicle.make} ${vehicle.model}`.trim() || 'Vehicle',
-      plate: vehicle.plateNumber || 'TBD',
-      year: vehicle.year || '2024',
-      service: selectedServices[0] || 'General Service',
-      workOrder: form.workOrder,
-      amount: quotationTotal,
-      status: (balanceDue - amountToRecord) <= 0 ? 'Paid' : 'Partial',
-      advisor: form.advisor || 'Ali Hassan',
-      paymentMethod,
-    }).catch(err => console.warn("Invoice sync error:", err));
-    commitInvoiceId(invoiceNumber);
+    // Update existing invoice for this work order or create if none exists (prevents duplicate invoices)
+    invoicesApi.getAll({ limit: 100 }).then((res) => {
+      const existing = res.data?.find((inv: any) => inv.workOrder === form.workOrder || inv.invoiceId === invoiceNumber);
+      if (existing) {
+        invoicesApi.update(existing.invoiceId || existing.id, {
+          status: (balanceDue - amountToRecord) <= 0 ? 'Paid' : 'Partial',
+          paidAmount: ((Number(existing.paidAmount) || 0) + amountToRecord),
+          paymentMethod,
+        }).catch(() => {});
+      } else {
+        invoicesApi.create({
+          invoiceId: invoiceNumber,
+          customer: customer.name || 'Customer',
+          phone: customer.mobile || customer.phone || '',
+          email: customer.email || '',
+          vehicle: `${vehicle.make} ${vehicle.model}`.trim() || 'Vehicle',
+          plate: vehicle.plateNumber || 'TBD',
+          year: vehicle.year || '2024',
+          service: selectedServices[0] || 'General Service',
+          workOrder: form.workOrder,
+          amount: quotationTotal,
+          status: (balanceDue - amountToRecord) <= 0 ? 'Paid' : 'Partial',
+          advisor: form.advisor || availableMechanics[0] || '',
+          paymentMethod,
+        }).catch(err => console.warn("Invoice sync error:", err));
+        commitInvoiceId(invoiceNumber);
+      }
+    }).catch(() => {
+      invoicesApi.create({
+        invoiceId: invoiceNumber,
+        customer: customer.name || 'Customer',
+        phone: customer.mobile || customer.phone || '',
+        email: customer.email || '',
+        vehicle: `${vehicle.make} ${vehicle.model}`.trim() || 'Vehicle',
+        plate: vehicle.plateNumber || 'TBD',
+        year: vehicle.year || '2024',
+        service: selectedServices[0] || 'General Service',
+        workOrder: form.workOrder,
+        amount: quotationTotal,
+        status: (balanceDue - amountToRecord) <= 0 ? 'Paid' : 'Partial',
+        advisor: form.advisor || availableMechanics[0] || '',
+        paymentMethod,
+      }).catch(() => {});
+      commitInvoiceId(invoiceNumber);
+    });
   };
 
   const createNewInvoice = () => {
@@ -1453,7 +1522,18 @@ function NewIntake(props: {
             <p>{step === 9 ? "Record payments and review the invoice balance." : step === 8 ? "Generate an invoice for completed repair work and record payment." : step === 7 ? "Manage repair completion information and update vehicle status." : "Manage garage service information and job records."}</p>
           </div>
         </div>
-        <div className="intake-heading-meta">
+        <div className="intake-heading-meta" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <button
+            type="button"
+            className="intake-action-button orange"
+            style={{ padding: "6px 14px", height: "36px", fontSize: "12px", borderRadius: "6px" }}
+            onClick={() => {
+              resetForm(true);
+              notify("New intake form initialized.");
+            }}
+          >
+            <Plus size={16} />+ New Entry
+          </button>
           <strong>Work Order: {form.workOrder || "—"}</strong>
           <span className={`intake-status${step === 9 || repairStatus === "Completed" ? " completed" : ""}`}>{step === 9 ? paymentStatus : step === 8 ? "Repair Completed" : step === 7 ? repairStatus : form.status}</span>
         </div>
@@ -1496,7 +1576,22 @@ function NewIntake(props: {
               <CustomDropdown
                 value={form.advisor}
                 onChange={(val) => update("advisor", val)}
-                options={["Sheikh Ahmed", "Ali Hassan", "M. Khan"]}
+                placeholder="Select Service Advisor..."
+                options={
+                  availableMechanics.length > 0
+                    ? [
+                        { value: "", label: "Select Service Advisor (Optional)" },
+                        ...availableMechanics.map((name) => ({
+                          value: name,
+                          label: name,
+                          badge: "Staff",
+                          badgeColor: "blue" as const,
+                        })),
+                      ]
+                    : [
+                        { value: "", label: "No workers registered (Add in Mechanics section)" }
+                      ]
+                }
               />
             </label>
             <label className="intake-field">
@@ -1559,7 +1654,7 @@ function NewIntake(props: {
                 onChange={(val) => update("mechanic", val)}
                 placeholder="Select Mechanic"
                 options={[
-                  { value: "", label: "Select Mechanic (Optional)" },
+                  { value: "", label: availableMechanics.length > 0 ? "Select Mechanic (Optional)" : "No mechanics registered (Add in Mechanics section)" },
                   ...availableMechanics.map((name) => ({
                     value: name,
                     label: name,
@@ -2243,12 +2338,21 @@ function NewIntake(props: {
                             value={labourMechanic}
                             placeholder="Select technician..."
                             onChange={(val) => setLabourMechanic(val)}
-                            options={availableMechanics.map((mech) => ({
-                              value: mech,
-                              label: mech,
-                              badge: "Technician",
-                              badgeColor: "orange" as const,
-                            }))}
+                            options={
+                              availableMechanics.length > 0
+                                ? [
+                                    { value: "", label: "Select technician (Optional)" },
+                                    ...availableMechanics.map((mech) => ({
+                                      value: mech,
+                                      label: mech,
+                                      badge: "Technician",
+                                      badgeColor: "orange" as const,
+                                    })),
+                                  ]
+                                : [
+                                    { value: "", label: "No mechanics registered" }
+                                  ]
+                            }
                           />
                         </label>
                         <label className="intake-field">
@@ -2520,12 +2624,21 @@ function NewIntake(props: {
                       value={form.mechanic || labourCharges[0]?.mechanic || availableMechanics[0] || ""}
                       onChange={(val) => update("mechanic", val)}
                       placeholder="Select mechanic..."
-                      options={availableMechanics.map((mech) => ({
-                        value: mech,
-                        label: mech,
-                        badge: "Mechanic",
-                        badgeColor: "orange" as const,
-                      }))}
+                      options={
+                        availableMechanics.length > 0
+                          ? [
+                              { value: "", label: "Select mechanic..." },
+                              ...availableMechanics.map((mech) => ({
+                                value: mech,
+                                label: mech,
+                                badge: "Mechanic",
+                                badgeColor: "orange" as const,
+                              })),
+                            ]
+                          : [
+                              { value: "", label: "No mechanics registered" }
+                            ]
+                      }
                     />
                   </label>
                   <label className="intake-field">
@@ -2869,100 +2982,94 @@ function NewIntake(props: {
           ref={previewRef}
           tabIndex={-1}
         >
-          {/* Document Type Switcher Tabs (Quotation, Work Order, Invoice, Gate Pass) */}
+          {/* Quotation Document Preview Header */}
           <div
             className="intake-preview-doc-tabs no-print"
             style={{
               display: "flex",
-              gap: "4px",
-              marginBottom: "8px",
-              padding: "3px",
-              background: "#edf2f7",
-              borderRadius: "7px",
+              alignItems: "center",
+              gap: "8px",
+              marginBottom: "10px",
+              padding: "8px 12px",
+              background: "#ffffff",
+              border: "1px solid #e2e8f0",
+              borderRadius: "8px",
+              color: "#ff631c",
+              fontWeight: 700,
+              fontSize: "12px",
+              boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
             }}
           >
-            {(["Quotation", "Gate Pass"] as const).map((type) => (
-              <button
-                key={type}
-                type="button"
-                style={{
-                  flex: 1,
-                  padding: "7px 10px",
-                  borderRadius: "6px",
-                  border: 0,
-                  background: documentType === type ? "#ffffff" : "transparent",
-                  color: documentType === type ? "#ff631c" : "#64748b",
-                  fontSize: "11px",
-                  fontWeight: documentType === type ? 700 : 600,
-                  boxShadow: documentType === type ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
-                  cursor: "pointer",
-                  whiteSpace: "nowrap",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "6px",
-                  transition: "all 0.15s ease",
-                }}
-                onClick={() => setDocumentType(type)}
-              >
-                {type === "Quotation" ? <FileText size={13} /> : <ClipboardList size={13} />}
-                <span>{type}</span>
-              </button>
-            ))}
+            <FileText size={15} />
+            <span>Quotation Document Preview</span>
           </div>
 
           <article className="intake-preview-paper">
-            <header className="intake-paper-header" style={{ alignItems: "flex-start", paddingTop: "0px", paddingBottom: "10px" }}>
+            <header className="intake-paper-header" style={{ alignItems: "flex-start", paddingTop: "0px", paddingBottom: "12px", borderBottom: "2px solid #0f172a" }}>
               <div className="intake-paper-brand" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                {docSettings?.showLogoOnPrint !== false && (
+                {docSettings?.showLogoOnPrint !== false && docSettings?.logoUrl ? (
                   <img
                     src={
-                      docSettings?.logoUrl?.startsWith("data:")
+                      docSettings.logoUrl.startsWith("data:")
                         ? docSettings.logoUrl
-                        : `${import.meta.env.BASE_URL}${docSettings?.logoUrl || "Garage-crm-logo-light.png"}`
+                        : `${import.meta.env.BASE_URL}${docSettings.logoUrl}`
                     }
                     alt="Company Logo"
                     style={{ height: "48px", width: "auto", objectFit: "contain", display: "block" }}
                     onError={(e) => {
-                      (e.target as HTMLImageElement).src = `${import.meta.env.BASE_URL}Garage-crm-logo-light.png`;
+                      (e.target as HTMLElement).style.display = "none";
                     }}
                   />
+                ) : (
+                  <div style={{
+                    width: "44px",
+                    height: "44px",
+                    borderRadius: "8px",
+                    background: "linear-gradient(135deg, #0f172a, #1e293b)",
+                    color: "#f97316",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontWeight: 900,
+                    fontSize: "18px",
+                    border: "1px solid #334155"
+                  }}>
+                    {((docSettings?.garageName || "GC").substring(0, 2)).toUpperCase()}
+                  </div>
                 )}
                 <div>
-                  <strong style={{ fontSize: "14px", fontWeight: 800, color: "#1e293b", display: "block", lineHeight: 1.2 }}>
-                    {(docSettings?.garageName || "DOHA CENTRAL WORKSHOP").toUpperCase()}
+                  <strong style={{ fontSize: "15px", fontWeight: 800, color: "#0f172a", display: "block", lineHeight: 1.2 }}>
+                    {(docSettings?.garageName || "GARAGE WORKSHOP").toUpperCase()}
                   </strong>
-                  <span style={{ fontSize: "10px", color: "#64748b", fontWeight: 500, display: "block", marginTop: "2px" }}>
-                    {docSettings?.facilitySubtitle || "Auto Care & Service Hub · Bays 01–12"}
+                  <span style={{ fontSize: "10.5px", color: "#64748b", fontWeight: 500, display: "block", marginTop: "2px" }}>
+                    {docSettings?.facilitySubtitle || docSettings?.address || "Automotive Care & Diagnostics Center"}
                   </span>
+                  {(docSettings?.phone || docSettings?.email || docSettings?.crNumber) && (
+                    <small style={{ fontSize: "9px", color: "#94a3b8", display: "block", marginTop: "2px" }}>
+                      {[
+                        docSettings?.phone ? `Tel: ${docSettings.phone}` : null,
+                        docSettings?.email ? `Email: ${docSettings.email}` : null,
+                        docSettings?.crNumber ? `C.R: ${docSettings.crNumber}` : null,
+                        docSettings?.taxNumber ? `Tax/TIN: ${docSettings.taxNumber}` : null,
+                      ].filter(Boolean).join(" · ")}
+                    </small>
+                  )}
                 </div>
               </div>
               <div>
                 <strong>
-                  {documentType === "Gate Pass"
-                    ? "VEHICLE GATE PASS"
-                    : step >= 8
+                  {step >= 8
                     ? "INVOICE"
                     : step === 7
                     ? "REPAIR SUMMARY"
                     : "QUOTATION"}
                 </strong>
                 <b>
-                  {documentType === "Gate Pass"
-                    ? `GP-${form.workOrder || "0001"}`
-                    : step >= 8
+                  {step >= 8
                     ? invoiceNumber
                     : quoteNumber}
                 </b>
-                {documentType === "Gate Pass" ? (
-                  <>
-                    <span className="intake-paper-status approved" style={{ background: "#e1f7ea", color: "#078348" }}>
-                      Authorized for Exit
-                    </span>
-                    <small>Date: {formatDate(completionDate || repairDate || form.date)}</small>
-                    <small>Exit Gate: Workshop Gate 1</small>
-                  </>
-                ) : step >= 8 ? (
+                {step >= 8 ? (
                   <>
                     <span className="intake-paper-status approved">Repair Completed</span>
                     <small>Date: {formatDate(invoiceDate)}</small>
@@ -3002,62 +3109,7 @@ function NewIntake(props: {
               </section>
             </div>
 
-            {documentType === "Gate Pass" ? (
-              <div className="intake-gatepass-section" style={{ marginTop: "12px" }}>
-                <div className="intake-paper-table-wrap">
-                  <table className="intake-paper-table">
-                    <thead>
-                      <tr>
-                        <th>Security &amp; Gate Clearance Checklist</th>
-                        <th style={{ textAlign: "center", width: "95px" }}>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>Work Order Services Completed ({form.workOrder || "WO-0001"})</td>
-                        <td style={{ textAlign: "center", color: "#078348", fontWeight: 700 }}>VERIFIED</td>
-                      </tr>
-                      <tr>
-                        <td>Invoice Payment &amp; Accounting Clearance ({invoiceNumber || "INV-0001"})</td>
-                        <td style={{ textAlign: "center", color: "#078348", fontWeight: 700 }}>CLEARED</td>
-                      </tr>
-                      <tr>
-                        <td>Vehicle Road Test &amp; Multi-Point Inspection</td>
-                        <td style={{ textAlign: "center", color: "#078348", fontWeight: 700 }}>PASSED</td>
-                      </tr>
-                      <tr>
-                        <td>Vehicle Keys, Documents &amp; Belongings Handed Over</td>
-                        <td style={{ textAlign: "center", color: "#078348", fontWeight: 700 }}>RELEASED</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-
-                <section className="intake-paper-notes" style={{ marginTop: "10px" }}>
-                  <h3>Gate Pass Authorization</h3>
-                  <p>{docSettings?.gatePassDisclaimer || "Vehicle is inspected, road-tested, and fully authorized to exit the workshop premises."}</p>
-                  {selectedServices.length > 0 && <small>Services performed: {selectedServices.join(", ")}</small>}
-                  <p>Service Advisor: {form.advisor || "Ali Hassan"} · Mechanic: {form.mechanic || "M. Khan"}</p>
-                </section>
-
-                {docSettings?.showSignatureLine !== false && (
-                  <div className="intake-paper-signature" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginTop: "14px" }}>
-                    <div>
-                      <strong>Customer Handover Sign:</strong>
-                      <span style={{ display: "block", borderBottom: "1px dashed #cbd5e1", height: "26px", margin: "4px 0" }} />
-                      <small>Date: __________________</small>
-                    </div>
-                    <div>
-                      <strong>Gate Security Officer:</strong>
-                      <span style={{ display: "block", borderBottom: "1px dashed #cbd5e1", height: "26px", margin: "4px 0" }} />
-                      <small>Sign &amp; Stamp: __________________</small>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <>
-                {step < 8 && <section className="intake-paper-complaint">
+            {step < 8 && <section className="intake-paper-complaint">
               <h3>Customer Complaint</h3>
               <p>{complaint || "No customer complaint entered."}</p>
               {selectedServices.length > 0 && <small>Requested services: {selectedServices.join(", ")}</small>}
@@ -3091,7 +3143,7 @@ function NewIntake(props: {
               <div className="intake-invoice-preview">
                 <div className="intake-paper-table-wrap">
                   <table className="intake-paper-table">
-                    <thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Unit Price (QAR)</th><th>Total (QAR)</th></tr></thead>
+                    <thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Unit Price ({currencyCode})</th><th>Total ({currencyCode})</th></tr></thead>
                     <tbody>
                       {externalParts.map((part, index) => {
                         const price = part.originalPrice + part.commission;
@@ -3120,7 +3172,7 @@ function NewIntake(props: {
                   <h3>External Parts</h3>
                   <div className="intake-paper-table-wrap">
                     <table className="intake-paper-table">
-                      <thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Unit Price (QAR)</th><th>Total (QAR)</th></tr></thead>
+                      <thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Unit Price ({currencyCode})</th><th>Total ({currencyCode})</th></tr></thead>
                       <tbody>
                         {externalParts.map((part, index) => (
                           <tr key={part.id}><td>{index + 1}</td><td>{part.name}</td><td>1</td>
@@ -3137,7 +3189,7 @@ function NewIntake(props: {
                   <h3>Labour Charges</h3>
                   <div className="intake-paper-table-wrap">
                     <table className="intake-paper-table">
-                      <thead><tr><th>#</th><th>Description</th><th>Hours</th><th>Rate (QAR)</th><th>Total (QAR)</th></tr></thead>
+                      <thead><tr><th>#</th><th>Description</th><th>Hours</th><th>Rate ({currencyCode})</th><th>Total ({currencyCode})</th></tr></thead>
                       <tbody>
                         {labourCharges.map((charge, index) => {
                           const hours = charge.hours ?? 2;
@@ -3154,21 +3206,21 @@ function NewIntake(props: {
                     <h3>Additional Charges</h3>
                     <div className="intake-paper-table-wrap">
                       <table className="intake-paper-table">
-                        <thead><tr><th>#</th><th>Description</th><th>Total (QAR)</th></tr></thead>
+                        <thead><tr><th>#</th><th>Description</th><th>Total ({currencyCode})</th></tr></thead>
                         <tbody>{additionalCharges.map((charge, index) => <tr key={charge.id}><td>{index + 1}</td><td>{charge.name}</td><td>{charge.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}</td></tr>)}</tbody>
                       </table>
                     </div>
                   </section>
                 )}
                 {quotationDiscount > 0 && <p className="intake-paper-quote-discount">Discount: -{currency(quotationDiscount)}</p>}
-                <div className="intake-paper-total quote-preview-total"><strong>Total Amount (QAR)</strong><strong>{currency(quotationTotal)}</strong></div>
+                <div className="intake-paper-total quote-preview-total"><strong>Total Amount ({currencyCode})</strong><strong>{currency(quotationTotal)}</strong></div>
               </div>
             ) : step === 7 ? (
               <div className="intake-repair-preview">
                 <h3>Completed Services &amp; Parts</h3>
                 <div className="intake-paper-table-wrap">
                   <table className="intake-paper-table">
-                    <thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>Total (QAR)</th></tr></thead>
+                    <thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>Total ({currencyCode})</th></tr></thead>
                     <tbody>
                       {externalParts.map((part, index) => {
                         const price = part.originalPrice + part.commission;
@@ -3183,12 +3235,12 @@ function NewIntake(props: {
                     </tbody>
                   </table>
                 </div>
-                <div className="intake-paper-total quote-preview-total"><strong>Total Amount (QAR)</strong><strong>{currency(quotationTotal)}</strong></div>
+                <div className="intake-paper-total quote-preview-total"><strong>Total Amount ({currencyCode})</strong><strong>{currency(quotationTotal)}</strong></div>
               </div>
             ) : (
               <div className="intake-paper-table-wrap">
                 <table className="intake-paper-table">
-                  <thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Customer Price (QAR)</th></tr></thead>
+                  <thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Customer Price ({currencyCode})</th></tr></thead>
                   <tbody>
                     {quotePreviewItems.map(({ description, price }, index) => (
                       <tr key={`${description}-${index}`}><td>{index + 1}</td><td>{description}</td><td>1</td><td>{price.toLocaleString("en-US", { minimumFractionDigits: 2 })}</td></tr>
@@ -3233,8 +3285,6 @@ function NewIntake(props: {
                 <small>Date: __________________</small>
               </div>
             )}
-              </>
-            )}
           </article>
 
           <div className="intake-preview-controls no-print" aria-hidden="true">
@@ -3253,14 +3303,18 @@ function NewIntake(props: {
           <div className="intake-preview-actions no-print">
             <button className="blue" onClick={() => window.print()}>
               <Printer size={16} />
-              Print {documentType}
+              Print Quotation
             </button>
             <button
-              className="outline"
-              onClick={() => notify("PDF download is not available in this frontend preview.")}
+              className="orange"
+              onClick={() => {
+                resetForm(true);
+                notify("New intake form initialized.");
+              }}
+              style={{ background: "linear-gradient(110deg, #ff631c, #f04c08)", color: "#ffffff", border: 0 }}
             >
-              <Download size={16} />
-              Download PDF
+              <Plus size={16} />
+              + New Intake
             </button>
           </div>
         </aside>

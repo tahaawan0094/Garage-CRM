@@ -70,6 +70,17 @@ const getWorkOrderById = async (req, res, next) => {
 const createWorkOrder = async (req, res, next) => {
   try {
     let workOrderId = req.body.workOrderId;
+    if (workOrderId) {
+      const existing = await WorkOrder.findOne(idQuery(workOrderId, 'workOrderId'));
+      if (existing) {
+        Object.assign(existing, req.body);
+        await existing.save();
+        if (req.body.vehicleId) {
+          await Vehicle.findOneAndUpdate(idQuery(req.body.vehicleId, 'vehicleId'), { status: 'In Service' });
+        }
+        return sendSuccess(res, existing, 'Work order updated successfully', 200);
+      }
+    }
     if (!workOrderId || (await WorkOrder.exists({ workOrderId }))) {
       workOrderId = await generateId('workOrder', 'WO', 5);
     }

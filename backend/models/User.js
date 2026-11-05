@@ -63,9 +63,14 @@ UserSchema.statics.hashPassword = function (password) {
   return { salt, hash };
 };
 
+UserSchema.statics.verifyPassword = function (candidatePassword, salt, passwordHash) {
+  if (!candidatePassword || !salt || !passwordHash) return false;
+  const candidateHash = crypto.pbkdf2Sync(candidatePassword, salt, 10000, 64, 'sha512').toString('hex');
+  return passwordHash === candidateHash;
+};
+
 UserSchema.methods.verifyPassword = function (candidatePassword) {
-  const candidateHash = crypto.pbkdf2Sync(candidatePassword, this.salt, 10000, 64, 'sha512').toString('hex');
-  return this.passwordHash === candidateHash;
+  return UserSchema.statics.verifyPassword(candidatePassword, this.salt, this.passwordHash);
 };
 
 module.exports = mongoose.model('User', UserSchema);

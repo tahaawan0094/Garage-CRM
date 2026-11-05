@@ -24,7 +24,7 @@ interface LoginPageProps {
 }
 
 export default function LoginPage({
-  garageName = 'Auto Care & Service Hub',
+  garageName = 'Garage CRM Suite',
   garageLogo,
   onLogin,
   onOpenActivation,
@@ -66,9 +66,9 @@ export default function LoginPage({
   };
 
   return (
-    <div className="relative flex min-h-screen w-full overflow-hidden bg-white font-sans text-slate-900">
+    <div className="grid grid-cols-1 lg:grid-cols-2 h-full min-h-0 w-full bg-white font-sans text-slate-900 overflow-hidden">
       
-      {/* CSS Keyframes for Handcrafted Smooth SVG Floating Animation (NOT AI-generated) */}
+      {/* CSS Keyframes for Handcrafted Smooth SVG Floating Animation */}
       <style>{`
         @keyframes garageFloat1 {
           0%, 100% { transform: translateY(0px) rotate(0deg); }
@@ -93,8 +93,8 @@ export default function LoginPage({
         }
       `}</style>
 
-      {/* Left Column - Dark Slate / Workshop Branding Area */}
-      <div className="relative hidden w-1/2 flex-col items-center justify-center overflow-hidden bg-[#0c1626] p-12 lg:flex text-white select-none">
+      {/* Left Column - Dark Slate / Workshop Hero Area (50% on lg+, hidden on mobile) */}
+      <div className="relative hidden lg:flex flex-col items-center justify-center overflow-hidden bg-[#0c1626] p-8 lg:p-12 text-white select-none h-full min-h-0">
         {/* Subtle Ambient Background Wireframe Circles */}
         <div className="absolute inset-0 opacity-10 pointer-events-none">
           <div className="absolute -left-16 -top-16 h-72 w-72 rounded-full border border-orange-400/40" />
@@ -159,7 +159,7 @@ export default function LoginPage({
           </p>
 
           <div className="mt-6 flex flex-wrap items-center justify-center gap-2 text-[11px] text-slate-400 font-medium">
-            <span className="px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700/60">Bays 01–12</span>
+            <span className="px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700/60">Workshop Bays</span>
             <span className="px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700/60">POS Billing</span>
             <span className="px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700/60">Job Cards</span>
             <span className="px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700/60 text-emerald-400">Offline &amp; Cloud Ready</span>
@@ -167,13 +167,19 @@ export default function LoginPage({
         </div>
       </div>
 
-      {/* Right Column - Direct Full Page Form (NO CARD, NO BOX BORDER, NO SHADOW BOX) */}
-      <div className="flex w-full items-center justify-center px-6 py-12 sm:px-12 lg:w-1/2 lg:px-20 bg-white">
-        <div className="w-full max-w-md">
+      {/* Right Column - Responsive Scrollable Form Panel (50% on lg+, 100% on mobile) */}
+      <div className="w-full h-full min-h-0 flex flex-col justify-center items-center overflow-y-auto p-6 sm:p-10 lg:p-16 bg-white">
+        <div className="w-full max-w-md mx-auto my-auto py-8">
           
           <div className="mb-8">
-            <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-orange-50 text-[#f95932] lg:hidden">
-              <Wrench size={22} />
+            <div className="mb-4 flex items-center gap-3 lg:hidden">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-orange-50 text-[#f95932] border border-orange-200/60">
+                <Wrench size={22} />
+              </div>
+              <div>
+                <strong className="text-base font-bold text-slate-900 block leading-tight">{garageName}</strong>
+                <span className="text-xs text-slate-500">Workshop Management CRM</span>
+              </div>
             </div>
             <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#f95932]">
               Secure Workshop Access
@@ -279,20 +285,21 @@ export default function LoginPage({
                 </button>
               )}
 
-              <button
-                type="button"
-                onClick={handleReset}
-                className="text-xs text-slate-400 hover:text-red-500 transition inline-flex items-center gap-1.5 cursor-pointer mt-1"
-                title="Wipe current registration cache and register a fresh workshop"
-              >
-                <RotateCcw size={12} />
-                <span>Register a different workshop / Reset</span>
-              </button>
+              {onResetToRegister && (
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="text-xs text-slate-500 hover:text-[#f95932] font-semibold transition inline-flex items-center gap-1.5 cursor-pointer mt-1"
+                >
+                  <RotateCcw size={12} />
+                  <span>Register a New Workshop Setup →</span>
+                </button>
+              )}
             </div>
           </form>
 
           <p className="text-[11px] text-slate-400 text-center uppercase font-bold tracking-widest mt-10">
-            Auto Care &amp; Service Hub · Workshop System
+            Garage CRM Suite · Cloud Workspace System
           </p>
         </div>
       </div>

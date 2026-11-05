@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Trash2, X } from "lucide-react";
 
 interface ConfirmDeleteModalProps {
@@ -20,23 +21,42 @@ export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
   onCancel,
   isDeleting = false,
 }) => {
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onCancel();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onCancel]);
+
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div
       className="modal-backdrop confirm-delete-backdrop"
       onClick={onCancel}
       style={{
         position: "fixed",
-        inset: 0,
-        background: "rgba(15, 23, 42, 0.45)",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: "100vw",
+        height: "100vh",
+        margin: 0,
+        padding: "16px",
+        background: "rgba(15, 23, 42, 0.65)",
         backdropFilter: "blur(4px)",
         WebkitBackdropFilter: "blur(4px)",
-        zIndex: 9999,
+        zIndex: 999999,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: "16px",
+        overflowY: "auto",
         animation: "fadeIn 0.2s ease-out",
       }}
     >
@@ -44,6 +64,8 @@ export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
         className="confirm-delete-card"
         onClick={(e) => e.stopPropagation()}
         style={{
+          margin: "auto",
+          flexShrink: 0,
           background: "#ffffff",
           border: "1px solid #e2e8f0",
           borderRadius: "14px",
@@ -199,6 +221,7 @@ export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

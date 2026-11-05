@@ -11,6 +11,7 @@ import {
   type DateFilterValue,
   matchesDateFilter,
 } from "./DateRangeFilter";
+import { BusinessPerformanceReport } from "./BusinessPerformanceReport";
 import {
   TrendingUp,
   Printer,
@@ -44,6 +45,30 @@ export function Reports({ notify }: { notify: (message: string) => void }) {
   const [isGraphCardFullWidth, setIsGraphCardFullWidth] = useState<boolean>(false);
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState<number>(850);
+
+  // Document and workshop branding settings
+  const [docSettings, setDocSettings] = useState<any>(() => {
+    try {
+      const saved = localStorage.getItem("garage_crm_settings_v1");
+      return saved ? JSON.parse(saved) : null;
+    } catch (_) {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    const onSettings = (e: any) => {
+      if (e.detail) setDocSettings(e.detail);
+      else {
+        try {
+          const saved = localStorage.getItem("garage_crm_settings_v1");
+          if (saved) setDocSettings(JSON.parse(saved));
+        } catch (_) {}
+      }
+    };
+    window.addEventListener("garage-settings-updated", onSettings);
+    return () => window.removeEventListener("garage-settings-updated", onSettings);
+  }, []);
 
   // ResizeObserver to track exact card container width
   useEffect(() => {
@@ -145,6 +170,7 @@ export function Reports({ notify }: { notify: (message: string) => void }) {
           allWorkOrders = [...missing, ...allWorkOrders];
         }
       } catch (e) {}
+
       setWorkOrders(allWorkOrders);
 
       // 3. Quotations
@@ -171,6 +197,7 @@ export function Reports({ notify }: { notify: (message: string) => void }) {
           allQuotes = [...missing, ...allQuotes];
         }
       } catch (e) {}
+
       setQuotations(allQuotes);
 
       // 4. Mechanics
@@ -197,6 +224,7 @@ export function Reports({ notify }: { notify: (message: string) => void }) {
           allMechanics = [...allMechanics, ...missing];
         }
       } catch (e) {}
+
       setMechanics(allMechanics);
 
       // 5. Salaries
@@ -219,6 +247,7 @@ export function Reports({ notify }: { notify: (message: string) => void }) {
           allSalaries = [...missing, ...allSalaries];
         }
       } catch (e) {}
+
       setSalaries(allSalaries);
 
       // 6. Parts
@@ -805,9 +834,38 @@ export function Reports({ notify }: { notify: (message: string) => void }) {
     }
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
+    const filterText =
+      dateFilter.type.charAt(0).toUpperCase() + dateFilter.type.slice(1);
+    const fileName = `Garage_Business_Performance_Report_${filterText}_${new Date().toISOString().slice(0, 10)}.pdf`;
+
+    if (notify) notify("Generating Executive Business Performance Report...");
+
+    // 1. In Electron desktop app: use native Chromium printToPDF (100% valid, reliable, vector PDF)
+    const desktopApi = (window as any).desktopApp || (window as any).electronAPI;
+    if (desktopApi && typeof desktopApi.exportPDF === "function") {
+      try {
+        const res = await desktopApi.exportPDF({ defaultFileName: fileName });
+        if (res?.success) {
+          if (notify) notify("PDF report exported and opened successfully!");
+          return;
+        } else if (res?.cancelled) {
+          return;
+        } else if (res?.reason) {
+          console.warn("Electron native PDF export failed:", res.reason);
+        }
+      } catch (err) {
+        console.warn("Electron export error:", err);
+      }
+    }
+
+    // 2. Web browser fallback:
+    const prevTitle = document.title;
+    document.title = fileName.replace(".pdf", "");
     window.print();
-    if (notify) notify("Printing / Saving report as PDF...");
+    setTimeout(() => {
+      document.title = prevTitle;
+    }, 4000);
   };
 
   // Donut circumference for r=52: 2 * PI * 52 = 326.72
@@ -815,86 +873,6 @@ export function Reports({ notify }: { notify: (message: string) => void }) {
 
   return (
     <main className="reports-page">
-      {/* ========================================================================= */}
-      {/* PRINT-ONLY OFFICIAL HEADER                                                */}
-      {/* ========================================================================= */}
-      <div
-        className="reports-print-header"
-        style={{
-          display: "none",
-          paddingBottom: "16px",
-          marginBottom: "18px",
-          borderBottom: "2px solid #0f172a",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <div>
-            <h1
-              style={{
-                margin: 0,
-                fontSize: "18px",
-                fontWeight: 800,
-                color: "#0f172a",
-                letterSpacing: "0.5px",
-              }}
-            >
-              AUTO CARE &amp; SERVICE HUB
-            </h1>
-            <p
-              style={{
-                margin: "2px 0 0",
-                fontSize: "11px",
-                color: "#475569",
-              }}
-            >
-              Doha Central Workshop Facility · Main Service Bays 01–12, Doha, Qatar
-            </p>
-            <p
-              style={{
-                margin: "1px 0 0",
-                fontSize: "10px",
-                color: "#64748b",
-              }}
-            >
-              Tel: +974 4455 6677 | CR No: 98412-QA | Tax / TIN: QA-7749210
-            </p>
-          </div>
-          <div style={{ textAlign: "right" }}>
-            <span
-              style={{
-                display: "inline-block",
-                padding: "4px 10px",
-                background: "#f1f5f9",
-                borderRadius: "6px",
-                fontSize: "11px",
-                fontWeight: 700,
-                color: "#0f172a",
-              }}
-            >
-              WORKSHOP AUDIT &amp; ANALYTICS REPORT
-            </span>
-            <div
-              style={{
-                fontSize: "10px",
-                color: "#475569",
-                marginTop: "4px",
-              }}
-            >
-              <strong>Period:</strong> {getFilterLabel()}
-            </div>
-            <div style={{ fontSize: "9.5px", color: "#64748b" }}>
-              Printed: {new Date().toLocaleString("en-GB")}
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Screen Toolbar & Heading */}
       <header className="reports-heading">
         <div className="reports-title">
@@ -972,6 +950,7 @@ export function Reports({ notify }: { notify: (message: string) => void }) {
 
       {/* Active Filter Period Badge Banner */}
       <div
+        className="reports-period-banner"
         style={{
           display: "flex",
           alignItems: "center",
@@ -1129,7 +1108,7 @@ export function Reports({ notify }: { notify: (message: string) => void }) {
             </div>
 
             {/* Toggle series & Full-Width buttons */}
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <div className="no-print" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <div
                 style={{
                   display: "inline-flex",
@@ -2357,58 +2336,18 @@ export function Reports({ notify }: { notify: (message: string) => void }) {
       </section>
 
       {/* ========================================================================= */}
-      {/* PRINT-ONLY OFFICIAL SIGNATURE AUDIT FOOTER                                */}
+      {/* DEDICATED CORPORATE MULTI-PAGE PRINTABLE BUSINESS PERFORMANCE REPORT      */}
+      {/* Hidden on screen; automatically formatted and paginated when printing/PDF */}
       {/* ========================================================================= */}
-      <div
-        className="reports-print-footer"
-        style={{
-          display: "none",
-          marginTop: "30px",
-          paddingTop: "20px",
-          borderTop: "1px solid #cbd5e1",
-        }}
-      >
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr 1fr",
-            gap: "20px",
-            textAlign: "center",
-            fontSize: "11px",
-            color: "#334155",
-          }}
-        >
-          <div>
-            <div style={{ height: "40px", borderBottom: "1px dashed #94a3b8" }} />
-            <p style={{ margin: "6px 0 0", fontWeight: 700 }}>
-              Workshop General Supervisor
-            </p>
-            <p style={{ margin: "2px 0 0", fontSize: "9.5px", color: "#64748b" }}>
-              Signature &amp; Verification
-            </p>
-          </div>
-
-          <div>
-            <div style={{ height: "40px", borderBottom: "1px dashed #94a3b8" }} />
-            <p style={{ margin: "6px 0 0", fontWeight: 700 }}>
-              Accounts &amp; Financial Officer
-            </p>
-            <p style={{ margin: "2px 0 0", fontSize: "9.5px", color: "#64748b" }}>
-              Stamp &amp; Approval
-            </p>
-          </div>
-
-          <div>
-            <div style={{ height: "40px", borderBottom: "1px dashed #94a3b8" }} />
-            <p style={{ margin: "6px 0 0", fontWeight: 700 }}>
-              Managing Director
-            </p>
-            <p style={{ margin: "2px 0 0", fontSize: "9.5px", color: "#64748b" }}>
-              Official Garage Stamp
-            </p>
-          </div>
-        </div>
-      </div>
+      <BusinessPerformanceReport
+        dateFilter={dateFilter}
+        invoices={filteredInvoices}
+        workOrders={filteredWorkOrders}
+        quotations={filteredQuotations}
+        mechanics={mechanics}
+        salaries={filteredSalaries}
+        settings={docSettings}
+      />
     </main>
   );
 }

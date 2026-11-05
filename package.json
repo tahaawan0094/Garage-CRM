@@ -7,6 +7,7 @@
     "dev": "concurrently -n \"VITE,API\" -c \"cyan,green\" \"vite\" \"node backend/server.js\"",
     "client": "vite",
     "backend": "node backend/server.js",
+    "app:run": "start \"\" \"desktop-release\\win-unpacked\\Garage CRM Suite.exe\"",
     "seed": "npm run seed --prefix backend",
     "build": "tsc -b && vite build",
     "preview": "vite preview"

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { invoicesApi } from "../lib/api";
+import { invoicesApi, mechanicsApi } from "../lib/api";
 import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
 import ViewInfoModal, { type ViewInfoTarget } from "./ViewInfoModal";
 import { CustomDropdown } from "./CustomDropdown";
@@ -13,7 +13,6 @@ import {
   ChevronRight,
   CircleCheck,
   Clock3,
-  CreditCard,
   Eye,
   FileText,
   Package,
@@ -22,7 +21,6 @@ import {
   RotateCcw,
   Share2,
   Trash2,
-  UserRound,
   Wrench,
 } from "lucide-react";
 
@@ -59,7 +57,6 @@ const statusClass: Record<string, string> = {
   Returned: "pending",
   "Partially Returned": "pending",
 };
-const money = (value: number) => `QAR ${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 function Invoices(props: { notify: (message: string) => void; onCreate?: (initialTab?: string, invoiceId?: string) => void; refreshTrigger?: number }) {
   const { notify, refreshTrigger, onCreate } = props;
@@ -80,6 +77,56 @@ function Invoices(props: { notify: (message: string) => void; onCreate?: (initia
       return saved ? JSON.parse(saved) : null;
     } catch (_) { return null; }
   });
+
+  const currencyCode = docSettings?.currency || "USD";
+  const money = (value: number) => `${currencyCode} ${(Number(value) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const [availableMechanics, setAvailableMechanics] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("garage_crm_mechanics_v1");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((m: any) => m.name || m.fullName).filter(Boolean);
+        }
+      }
+    } catch (_) {}
+    return [];
+  });
+
+  useEffect(() => {
+    const loadMechanics = () => {
+      try {
+        const saved = localStorage.getItem("garage_crm_mechanics_v1");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setAvailableMechanics(parsed.map((m: any) => m.name || m.fullName).filter(Boolean));
+            return;
+          }
+        }
+      } catch (_) {}
+      mechanicsApi
+        .getAll({ limit: 100 })
+        .then((res) => {
+          if (res.data && Array.isArray(res.data) && res.data.length > 0) {
+            setAvailableMechanics(res.data.map((m: any) => m.name || m.fullName).filter(Boolean));
+          } else {
+            setAvailableMechanics([]);
+          }
+        })
+        .catch(() => setAvailableMechanics([]));
+    };
+    loadMechanics();
+    window.addEventListener("garage_mechanics_updated", loadMechanics);
+    window.addEventListener("storage", loadMechanics);
+    window.addEventListener("focus", loadMechanics);
+    return () => {
+      window.removeEventListener("garage_mechanics_updated", loadMechanics);
+      window.removeEventListener("storage", loadMechanics);
+      window.removeEventListener("focus", loadMechanics);
+    };
+  }, []);
 
   useEffect(() => {
     const onSettings = (e: any) => {
@@ -128,11 +175,30 @@ function Invoices(props: { notify: (message: string) => void; onCreate?: (initia
               })),
               type: 'Parts',
             }));
-            setInvoices([...convertedLocal, ...backendList]);
+            const combined = [...convertedLocal, ...backendList];
+            const seenInv = new Set<string>();
+            const dedupedInv = combined.filter((item: any) => {
+              const key = item.workOrder && item.workOrder !== 'POS'
+                ? `${item.customer}_${item.workOrder}`.toLowerCase()
+                : item.id || item.invoiceId;
+              if (seenInv.has(key)) return false;
+              seenInv.add(key);
+              return true;
+            });
+            setInvoices(dedupedInv);
             return;
           }
         } catch {}
-        setInvoices(backendList);
+        const seenInv = new Set<string>();
+        const dedupedBackend = backendList.filter((item: any) => {
+          const key = item.workOrder && item.workOrder !== 'POS'
+            ? `${item.customer}_${item.workOrder}`.toLowerCase()
+            : item.id || item.invoiceId;
+          if (seenInv.has(key)) return false;
+          seenInv.add(key);
+          return true;
+        });
+        setInvoices(dedupedBackend);
       })
       .catch((err) => {
         console.warn("Could not fetch invoices from backend:", err);
@@ -253,12 +319,12 @@ function Invoices(props: { notify: (message: string) => void; onCreate?: (initia
               value={advisorFilter}
               onChange={(val) => { setAdvisorFilter(val); setPage(1); }}
               ariaLabel="Filter by service advisor"
-              options={["All Service Advisors", "Ali Hassan", "M. Khan"]}
+              options={["All Service Advisors", ...availableMechanics]}
             />
           </div>
           <div className="invoice-table-scroll">
             <table className="invoice-management-table">
-              <thead><tr><th>#</th><th>Invoice No.</th><th>Customer</th><th>Vehicle</th><th>Related To / Service Type</th><th>Status</th><th>Created Date</th><th>Total (QAR)</th><th>Actions</th></tr></thead>
+              <thead><tr><th>#</th><th>Invoice No.</th><th>Customer</th><th>Vehicle</th><th>Related To / Service Type</th><th>Status</th><th>Created Date</th><th>Total ({currencyCode})</th><th>Actions</th></tr></thead>
               <tbody>
                 {pageInvoices.map((invoice, index) => {
                   const isParts = invoice.type === 'Parts' || invoice.service?.toLowerCase().includes('part') || invoice.workOrder === 'POS';
@@ -332,84 +398,346 @@ function Invoices(props: { notify: (message: string) => void; onCreate?: (initia
           <footer className="invoice-table-footer"><span>Showing {filteredInvoices.length ? (currentPage - 1) * 10 + 1 : 0} to {Math.min(currentPage * 10, filteredInvoices.length)} of {filteredInvoices.length} invoices</span><div><button aria-label="Previous page" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}><ChevronLeft size={16} /></button>{Array.from({ length: pageCount }, (_, index) => index + 1).map((pageNumber) => <button key={pageNumber} className={currentPage === pageNumber ? "active" : ""} aria-label={`Page ${pageNumber}`} aria-current={currentPage === pageNumber ? "page" : undefined} onClick={() => setPage(pageNumber)}>{pageNumber}</button>)}<button aria-label="Next page" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}><ChevronRight size={16} /></button></div></footer>
         </section>
         {selectedInvoice && (
-          <aside className="invoice-detail-card" aria-label={`Invoice details for ${selectedInvoice.id}`}>
-            <header><div><FileText size={16} /><strong>Invoice Details</strong></div></header>
-            <div className="invoice-detail-number"><strong>{selectedInvoice.id}</strong><span className={`invoice-status-badge ${statusClass[selectedInvoice.status]}`}>{selectedInvoice.status}</span></div>
-            <small className="invoice-created-at">Created: {selectedInvoice.date}, 10:30 AM</small>
-            <section className="invoice-detail-block">
-              <h3><UserRound size={15} />Customer <button onClick={() => setViewInfoTarget({ type: "invoice", data: selectedInvoice })}>View Info</button></h3>
-              <div className="invoice-customer-line"><span className="invoice-customer-avatar">{selectedInvoice.customer.split(" ").map((part) => part[0]).slice(0, 2).join("")}</span><div><strong>{selectedInvoice.customer}</strong><span>{selectedInvoice.phone}</span><span>{selectedInvoice.email}</span></div></div>
-            </section>
-            <section className="invoice-detail-block">
-              <h3><CarFront size={16} />Vehicle</h3><div className="invoice-vehicle-detail"><CarFront size={47} /><div><strong>{selectedInvoice.vehicle} - {selectedInvoice.year}</strong><span>Plate: {selectedInvoice.plate} · VIN: N/A</span></div></div>
-            </section>
-            <section className="invoice-detail-block invoice-service-info">
-              <h3><Wrench size={15} />Service Information</h3>
-              <div><span>Related To</span><strong>Work Order #{selectedInvoice.workOrder}</strong><span>Service Type</span><strong>{selectedInvoice.service}</strong><span>Description</span><strong>{selectedInvoice.detail}</strong><span>Service Advisor</span><strong>{selectedInvoice.advisor}</strong></div>
-              <div><span>Invoice Date</span><strong>{selectedInvoice.date}</strong><span>Payment Terms</span><strong>Due in 7 days</strong><span>Due Date</span><strong>{selectedInvoice.dueDate}</strong></div>
-            </section>
-            <section className="invoice-detail-items">
-              <h3><CreditCard size={15} />Invoice Items ({selectedInvoice.items.length} items)</h3>
-              <div className="invoice-detail-table-scroll"><table><thead><tr><th>#</th><th>Item / Service</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead><tbody>
-                {selectedInvoice.items.map((item, index) => <tr key={`${selectedInvoice.id}-${item.name}`}><td>{index + 1}</td><td>{item.name}</td><td>{item.quantity}</td><td>{money(item.unitPrice)}</td><td>{money(item.quantity * item.unitPrice)}</td></tr>)}
-              </tbody></table></div>
-              <div className="invoice-detail-totals"><div><span>Subtotal</span><strong>{money(selectedInvoice.amount)}</strong></div><div><span>VAT (5%)</span><strong>{money(selectedInvoice.amount * 0.05)}</strong></div><div><span>Discount (-)</span><strong className="negative">{money(selectedInvoice.discount)}</strong></div><div className="grand"><strong>Grand Total</strong><strong>{money(selectedInvoice.amount)}</strong></div></div>
-            </section>
-            <div className="invoice-detail-actions-wrap" style={{ marginTop: "8px" }}>
+          <aside className="intake-preview-card invoice-paper-preview-aside" style={{ background: "#ffffff", borderRadius: "12px", border: "1px solid #e2e8f0", padding: "14px", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
+            {/* Top Preview Status Header */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: "10px",
+                padding: "8px 12px",
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+                borderRadius: "8px",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "7px", color: "#ff631c", fontWeight: 700, fontSize: "12px" }}>
+                <FileText size={15} />
+                <span>Invoice Document Preview</span>
+              </div>
+              <span className={`invoice-status-badge ${statusClass[selectedInvoice.status]}`} style={{ margin: 0 }}>
+                {selectedInvoice.status}
+              </span>
+            </div>
+
+            {/* Paper Document matching Quotations & New Intake */}
+            <article className="intake-preview-paper" style={{ borderRadius: "8px", border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.03)", padding: "14px" }}>
+              <header className="intake-paper-header" style={{ alignItems: "flex-start", paddingTop: "0px", paddingBottom: "12px", borderBottom: "2px solid #0f172a" }}>
+                <div className="intake-paper-brand" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  {docSettings?.showLogoOnPrint !== false && docSettings?.logoUrl ? (
+                    <img
+                      src={
+                        docSettings.logoUrl.startsWith("data:")
+                          ? docSettings.logoUrl
+                          : `${import.meta.env.BASE_URL}${docSettings.logoUrl}`
+                      }
+                      alt="Company Logo"
+                      style={{ height: "46px", width: "auto", objectFit: "contain", display: "block" }}
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = "none";
+                      }}
+                    />
+                  ) : (
+                    <div style={{
+                      width: "42px",
+                      height: "42px",
+                      borderRadius: "8px",
+                      background: "linear-gradient(135deg, #0f172a, #1e293b)",
+                      color: "#f97316",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontWeight: 900,
+                      fontSize: "16px",
+                      border: "1px solid #334155"
+                    }}>
+                      {((docSettings?.garageName || "GC").substring(0, 2)).toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <strong style={{ fontSize: "14px", fontWeight: 800, color: "#0f172a", display: "block", lineHeight: 1.2 }}>
+                      {(docSettings?.garageName || "GARAGE WORKSHOP").toUpperCase()}
+                    </strong>
+                    <span style={{ fontSize: "10.5px", color: "#64748b", fontWeight: 500, display: "block", marginTop: "2px" }}>
+                      {docSettings?.facilitySubtitle || docSettings?.address || "Automotive Care & Diagnostics Center"}
+                    </span>
+                    {(docSettings?.phone || docSettings?.email || docSettings?.crNumber) && (
+                      <small style={{ fontSize: "9px", color: "#94a3b8", display: "block", marginTop: "2px" }}>
+                        {[
+                          docSettings?.phone ? `Tel: ${docSettings.phone}` : null,
+                          docSettings?.email ? `Email: ${docSettings.email}` : null,
+                          docSettings?.crNumber ? `C.R: ${docSettings.crNumber}` : null,
+                          docSettings?.taxNumber ? `Tax/TIN: ${docSettings.taxNumber}` : null,
+                        ].filter(Boolean).join(" · ")}
+                      </small>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <strong style={{ fontSize: "13px", fontWeight: 800, color: "#0f172a" }}>TAX INVOICE</strong>
+                  <b style={{ fontSize: "12px", color: "#1e293b" }}>{selectedInvoice.id}</b>
+                  <span className={`intake-paper-status ${selectedInvoice.status === "Paid" ? "approved" : "pending"}`}>
+                    {selectedInvoice.status}
+                  </span>
+                  <small style={{ fontSize: "9.5px", color: "#64748b" }}>Date: {selectedInvoice.date}</small>
+                  {selectedInvoice.workOrder && (
+                    <small style={{ fontSize: "9.5px", color: "#64748b" }}>Work Order: #{selectedInvoice.workOrder}</small>
+                  )}
+                </div>
+              </header>
+
+              <div className="intake-paper-details" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", padding: "10px 0", borderBottom: "1px solid #e7ebf1" }}>
+                <section style={{ display: "flex", flexDirection: "column", gap: "3px", fontSize: "10px" }}>
+                  <h3 style={{ margin: "0 0 4px", fontSize: "10px", fontWeight: 700, color: "#475569" }}>Billed To Customer</h3>
+                  <strong style={{ fontSize: "11px", color: "#0f172a" }}>{selectedInvoice.customer || "Walk-in Customer"}</strong>
+                  <span style={{ color: "#64748b" }}>{selectedInvoice.phone || "No Mobile"}</span>
+                  {selectedInvoice.email && <span style={{ color: "#64748b" }}>{selectedInvoice.email}</span>}
+                </section>
+                <section style={{ display: "flex", flexDirection: "column", gap: "3px", fontSize: "10px" }}>
+                  <h3 style={{ margin: "0 0 4px", fontSize: "10px", fontWeight: 700, color: "#475569" }}>Vehicle Details</h3>
+                  <strong style={{ fontSize: "11px", color: "#0f172a" }}>{selectedInvoice.vehicle || "Vehicle"}</strong>
+                  <span style={{ color: "#64748b" }}>Year: {selectedInvoice.year || "—"}</span>
+                  <span style={{ color: "#64748b" }}>Plate No: {selectedInvoice.plate || "—"}</span>
+                  {selectedInvoice.advisor && <span style={{ color: "#64748b" }}>Advisor: {selectedInvoice.advisor}</span>}
+                </section>
+              </div>
+
+              <section className="intake-paper-complaint" style={{ padding: "9px 0", borderBottom: "1px solid #e7ebf1" }}>
+                <h3 style={{ margin: "0 0 4px", fontSize: "10px", fontWeight: 700, color: "#475569" }}>Service Scope / Description</h3>
+                <p style={{ margin: 0, color: "#1e293b", fontSize: "10px", lineHeight: 1.4 }}>
+                  {selectedInvoice.service} {selectedInvoice.detail ? `· ${selectedInvoice.detail}` : ''}
+                </p>
+              </section>
+
+              <div className="intake-paper-table-wrap" style={{ marginTop: "8px" }}>
+                <table className="intake-paper-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: "9.5px" }}>
+                  <thead>
+                    <tr style={{ background: "#f8fafc" }}>
+                      <th style={{ padding: "6px 4px", borderBottom: "1px solid #e2e8f0" }}>#</th>
+                      <th style={{ padding: "6px 4px", borderBottom: "1px solid #e2e8f0" }}>Description</th>
+                      <th style={{ padding: "6px 4px", textAlign: "center", borderBottom: "1px solid #e2e8f0" }}>Qty</th>
+                      <th style={{ padding: "6px 4px", textAlign: "right", borderBottom: "1px solid #e2e8f0" }}>Unit Price ({currencyCode})</th>
+                      <th style={{ padding: "6px 4px", textAlign: "right", borderBottom: "1px solid #e2e8f0" }}>Total ({currencyCode})</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedInvoice.items && selectedInvoice.items.length > 0 ? (
+                      selectedInvoice.items.map((item, index) => (
+                        <tr key={`${selectedInvoice.id}-${item.name}-${index}`}>
+                          <td style={{ padding: "5px 4px", borderBottom: "1px solid #f1f5f9" }}>{index + 1}</td>
+                          <td style={{ padding: "5px 4px", borderBottom: "1px solid #f1f5f9", fontWeight: 600, color: "#1e293b" }}>{item.name}</td>
+                          <td style={{ padding: "5px 4px", textAlign: "center", borderBottom: "1px solid #f1f5f9" }}>{item.quantity}</td>
+                          <td style={{ padding: "5px 4px", textAlign: "right", borderBottom: "1px solid #f1f5f9" }}>{money(item.unitPrice).replace(/^[A-Za-z]+\s*/, '')}</td>
+                          <td style={{ padding: "5px 4px", textAlign: "right", borderBottom: "1px solid #f1f5f9", fontWeight: 600 }}>{money(item.quantity * item.unitPrice).replace(/^[A-Za-z]+\s*/, '')}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={5} style={{ padding: "8px 4px", textAlign: "center", color: "#64748b" }}>
+                          No specific line items entered.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Highlighted Total Amount Banner */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  background: "#fff0eb",
+                  padding: "10px 14px",
+                  borderRadius: "6px",
+                  margin: "12px 0 10px",
+                  border: "1px solid #ffd8c4",
+                }}
+              >
+                <strong style={{ color: "#ea580c", fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.02em" }}>
+                  Total Invoiced ({currencyCode})
+                </strong>
+                <strong style={{ color: "#ea580c", fontSize: "16px", fontWeight: 800 }}>
+                  {money(selectedInvoice.amount)}
+                </strong>
+              </div>
+
+              {/* Notes */}
+              <section className="intake-paper-notes" style={{ padding: "6px 0", borderBottom: "1px solid #f1f5f9" }}>
+                <h3 style={{ margin: "0 0 4px", fontSize: "9.5px", fontWeight: 700, color: "#475569" }}>Invoice Notes</h3>
+                <p style={{ margin: 0, fontSize: "9px", color: "#64748b", lineHeight: 1.4 }}>• Payment status: {selectedInvoice.status}. Payment terms: Due in 7 days.</p>
+                <p style={{ margin: "2px 0 0", fontSize: "9px", color: "#64748b", lineHeight: 1.4 }}>• Warranty valid for 30 days or 1,000 km from service date.</p>
+                {selectedInvoice.advisor && <p style={{ margin: "2px 0 0", fontSize: "9px", color: "#64748b", lineHeight: 1.4 }}>• Service Advisor: {selectedInvoice.advisor}</p>}
+              </section>
+
+              {/* Signature Line */}
+              {docSettings?.showSignatureLine !== false && (
+                <div className="intake-paper-signature" style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "end", gap: "6px 10px", marginTop: "10px", fontSize: "9.5px" }}>
+                  <strong style={{ color: "#475569" }}>Authorized Signature:</strong>
+                  <span style={{ gridColumn: "1 / -1", height: "32px", border: "1px dashed #cbd5e1", borderRadius: "4px" }} />
+                  <small style={{ gridColumn: "2", color: "#94a3b8" }}>Date: __________________</small>
+                </div>
+              )}
+            </article>
+
+            {/* Action buttons matching professional UI */}
+            <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
+              {selectedInvoice.status !== "Paid" && selectedInvoice.status !== "Returned" && (
+                <button
+                  className="mark-paid"
+                  onClick={() => markPaid()}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "6px",
+                    padding: "9px 12px",
+                    background: "#08a85d",
+                    color: "#ffffff",
+                    borderRadius: "8px",
+                    border: 0,
+                    fontWeight: 700,
+                    fontSize: "12px",
+                    cursor: "pointer",
+                    boxShadow: "0 2px 6px rgba(8, 168, 93, 0.25)"
+                  }}
+                >
+                  <Check size={15} />
+                  <span>Mark Paid</span>
+                </button>
+              )}
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                <button
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "6px",
+                    padding: "9px 12px",
+                    background: "#ff631c",
+                    color: "#ffffff",
+                    borderRadius: "8px",
+                    border: 0,
+                    fontWeight: 700,
+                    fontSize: "12px",
+                    cursor: "pointer",
+                    boxShadow: "0 2px 6px rgba(255, 99, 28, 0.25)"
+                  }}
+                  onClick={() => window.print()}
+                  title="Reprint Invoice"
+                >
+                  <Printer size={15} />
+                  <span>Print Invoice</span>
+                </button>
+
+                <button
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "6px",
+                    padding: "9px 12px",
+                    background: "#f1f5f9",
+                    color: "#334155",
+                    borderRadius: "8px",
+                    border: "1px solid #cbd5e1",
+                    fontWeight: 600,
+                    fontSize: "12px",
+                    cursor: "pointer"
+                  }}
+                  onClick={() => {
+                    if (navigator.clipboard) {
+                      navigator.clipboard.writeText(`${window.location.origin}/#invoice-${selectedInvoice.id}`);
+                    }
+                    notify(`Invoice link for ${selectedInvoice.id} copied.`);
+                  }}
+                  title="Share Invoice"
+                >
+                  <Share2 size={14} />
+                  <span>Share Link</span>
+                </button>
+              </div>
+
               <button
                 type="button"
                 className="crm-view-info-card-btn"
-                style={{ width: "100%", marginBottom: "8px" }}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                  padding: "8px 12px",
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "8px",
+                  fontWeight: 600,
+                  fontSize: "11px",
+                  color: "#475569",
+                  cursor: "pointer"
+                }}
                 onClick={() => setViewInfoTarget({ type: "invoice", data: selectedInvoice })}
               >
                 <Eye size={14} />
                 <span>View Full Info &amp; History</span>
               </button>
-              <div className="invoice-detail-actions" style={{ marginTop: 0 }}>
-                {selectedInvoice.status !== "Paid" && selectedInvoice.status !== "Returned" && (
-                  <button className="mark-paid" onClick={() => markPaid()} style={{ gridColumn: "1 / -1" }}>
-                    <Check size={14} />
-                    <span>Mark Paid</span>
-                  </button>
-                )}
-                <button onClick={() => window.print()} title="Reprint Invoice">
-                  <Printer size={14} />
-                  <span>Reprint</span>
-                </button>
-                <button onClick={() => {
-                  if (navigator.clipboard) {
-                    navigator.clipboard.writeText(`${window.location.origin}/#invoice-${selectedInvoice.id}`);
-                  }
-                  notify(`Invoice link for ${selectedInvoice.id} copied.`);
-                }} title="Share Invoice">
-                  <Share2 size={14} />
-                  <span>Share</span>
-                </button>
-                {(selectedInvoice.type === 'Parts' || selectedInvoice.service?.toLowerCase().includes('part') || selectedInvoice.workOrder === 'POS') && (
-                  <button
-                    style={{ borderColor: "#fed7aa", background: "#fff7ed", color: "#c2410c", fontWeight: 600, gridColumn: "1 / -1" }}
-                    onClick={() => {
-                      if (onCreate) {
-                        onCreate('returns', selectedInvoice.id);
-                      } else {
-                        notify(`Switch to POS Returns to refund invoice ${selectedInvoice.id}`);
-                      }
-                    }}
-                    title="Process Return & Refund"
-                  >
-                    <RotateCcw size={14} />
-                    <span>Process Return / Refund</span>
-                  </button>
-                )}
+
+              {(selectedInvoice.type === 'Parts' || selectedInvoice.service?.toLowerCase().includes('part') || selectedInvoice.workOrder === 'POS') && (
                 <button
-                  style={{ borderColor: "#fecaca", background: "#fff1f2", color: "#e11d48", fontWeight: 600, gridColumn: "1 / -1" }}
-                  onClick={() => setDeleteModalInvoice(selectedInvoice)}
-                  title="Delete Invoice"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "6px",
+                    padding: "8px 12px",
+                    borderColor: "#fed7aa",
+                    background: "#fff7ed",
+                    color: "#c2410c",
+                    fontWeight: 600,
+                    fontSize: "11px",
+                    borderRadius: "8px",
+                    border: "1px solid #fed7aa",
+                    cursor: "pointer"
+                  }}
+                  onClick={() => {
+                    if (onCreate) {
+                      onCreate('returns', selectedInvoice.id);
+                    } else {
+                      notify(`Switch to POS Returns to refund invoice ${selectedInvoice.id}`);
+                    }
+                  }}
+                  title="Process Return & Refund"
                 >
-                  <Trash2 size={14} />
-                  <span>Delete Invoice</span>
+                  <RotateCcw size={14} />
+                  <span>Process Return / Refund</span>
                 </button>
-              </div>
+              )}
+
+              <button
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                  padding: "8px 12px",
+                  borderColor: "#fecaca",
+                  background: "#fff1f2",
+                  color: "#e11d48",
+                  borderRadius: "8px",
+                  border: "1px solid #fecaca",
+                  fontWeight: 600,
+                  fontSize: "11px",
+                  cursor: "pointer"
+                }}
+                onClick={() => setDeleteModalInvoice(selectedInvoice)}
+                title="Delete Invoice"
+              >
+                <Trash2 size={13} />
+                <span>Delete Invoice</span>
+              </button>
             </div>
           </aside>
         )}
@@ -422,24 +750,49 @@ function Invoices(props: { notify: (message: string) => void; onCreate?: (initia
             {/* Tax Invoice Document Header */}
             <div className="tax-invoice-header">
               <div className="tax-invoice-brand" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                {docSettings?.showLogoOnPrint !== false && (
+                {docSettings?.showLogoOnPrint !== false && docSettings?.logoUrl ? (
                   <img
                     src={
-                      docSettings?.logoUrl?.startsWith("data:")
+                      docSettings.logoUrl.startsWith("data:")
                         ? docSettings.logoUrl
-                        : `${import.meta.env.BASE_URL}${docSettings?.logoUrl || "Garage-crm-logo-light.png"}`
+                        : `${import.meta.env.BASE_URL}${docSettings.logoUrl}`
                     }
                     alt="Company Logo"
                     style={{ height: "46px", width: "auto", objectFit: "contain" }}
                     onError={(e) => {
-                      (e.target as HTMLImageElement).src = `${import.meta.env.BASE_URL}Garage-crm-logo-light.png`;
+                      (e.target as HTMLElement).style.display = "none";
                     }}
                   />
+                ) : (
+                  <div style={{
+                    width: "44px",
+                    height: "44px",
+                    borderRadius: "8px",
+                    background: "linear-gradient(135deg, #0f172a, #1e293b)",
+                    color: "#f97316",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontWeight: 900,
+                    fontSize: "18px",
+                    border: "1px solid #334155"
+                  }}>
+                    {((docSettings?.garageName || "GC").substring(0, 2)).toUpperCase()}
+                  </div>
                 )}
                 <div>
-                  <h2>{(docSettings?.garageName || "DOHA CENTRAL WORKSHOP").toUpperCase()}</h2>
-                  <p>{docSettings?.facilitySubtitle || "Auto Care & Service Hub · Bays 01–12"} · {docSettings?.city || "Doha"}, {docSettings?.country || "Qatar"}</p>
-                  <p>Phone: {docSettings?.phone || "+974 5555 1234"} · C.R: {docSettings?.crNumber || "84920/1"}</p>
+                  <h2>{(docSettings?.garageName || "GARAGE WORKSHOP").toUpperCase()}</h2>
+                  <p>{docSettings?.facilitySubtitle || docSettings?.address || "Automotive Care & Diagnostics Center"}</p>
+                  {(docSettings?.phone || docSettings?.email || docSettings?.crNumber) && (
+                    <p>
+                      {[
+                        docSettings?.phone ? `Phone: ${docSettings.phone}` : null,
+                        docSettings?.email ? `Email: ${docSettings.email}` : null,
+                        docSettings?.crNumber ? `C.R: ${docSettings.crNumber}` : null,
+                        docSettings?.taxNumber ? `Tax/TIN: ${docSettings.taxNumber}` : null,
+                      ].filter(Boolean).join(" · ")}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="tax-invoice-meta">
@@ -461,7 +814,7 @@ function Invoices(props: { notify: (message: string) => void; onCreate?: (initia
                 <strong>Vehicle Details</strong>
                 <div className="party-name">{selectedInvoice.vehicle}</div>
                 <div className="party-detail">
-                  Plate: {selectedInvoice.plate || "TBD"} · Advisor: {selectedInvoice.advisor || "Ali Hassan"}
+                  Plate: {selectedInvoice.plate || "TBD"} · Advisor: {selectedInvoice.advisor || "Unassigned"}
                 </div>
               </div>
             </div>
@@ -472,7 +825,7 @@ function Invoices(props: { notify: (message: string) => void; onCreate?: (initia
                 <tr>
                   <th style={{ textAlign: "left", width: "60%" }}>Description / Item</th>
                   <th style={{ textAlign: "center", width: "15%" }}>Qty</th>
-                  <th style={{ textAlign: "right", width: "25%" }}>Amount (QAR)</th>
+                  <th style={{ textAlign: "right", width: "25%" }}>Amount ({currencyCode})</th>
                 </tr>
               </thead>
               <tbody>

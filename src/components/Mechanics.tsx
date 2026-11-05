@@ -68,213 +68,6 @@ const statusClass: Record<MechanicStatus, string> = {
   "On Duty": "on-duty",
 };
 
-// Initial default mechanics if backend returns empty
-const defaultMechanics: Mechanic[] = [
-  {
-    id: "MEC-1001",
-    mechanicId: "MEC-1001",
-    name: "Ali Hassan",
-    initials: "AH",
-    role: "Engine Specialist",
-    phone: "+974 5512 3456",
-    email: "ali.hassan@garageworkspace.com",
-    nationalId: "29433400192",
-    baseSalary: 6500,
-    commissionRate: 5,
-    status: "On Job",
-    shift: "Morning",
-    joiningDate: "2023-01-15",
-    emergencyContact: "Brother: +974 5599 1122",
-    assignedJobs: 3,
-    completedJobs: 248,
-    rating: 4.8,
-    experience: 6,
-    notes: "Expert in engine diagnostics, rebuilds, and European performance tuning.",
-    assignments: [
-      { workOrder: "WO-00012", vehicle: "Toyota Corolla", customer: "Sheikh Ahmed", service: "Engine Diagnostics", status: "In Progress" },
-      { workOrder: "WO-00028", vehicle: "BMV", customer: "Vertexia Agency", service: "General Service", status: "In Progress" },
-    ],
-  },
-  {
-    id: "MEC-1002",
-    mechanicId: "MEC-1002",
-    name: "M. Khan",
-    initials: "MK",
-    role: "Brake Specialist",
-    phone: "+974 5523 4567",
-    email: "m.khan@garageworkspace.com",
-    nationalId: "29133400811",
-    baseSalary: 5200,
-    commissionRate: 4,
-    status: "Available",
-    shift: "Morning",
-    joiningDate: "2023-04-10",
-    emergencyContact: "Spouse: +974 5588 2233",
-    assignedJobs: 2,
-    completedJobs: 194,
-    rating: 4.5,
-    experience: 5,
-    notes: "Brembo certified. Suspension alignment & ABS braking specialist.",
-    assignments: [
-      { workOrder: "WO-00006", vehicle: "Renault Duster", customer: "Muhammad Muddasir", service: "Brake Service", status: "In Progress" },
-    ],
-  },
-  {
-    id: "MEC-1003",
-    mechanicId: "MEC-1003",
-    name: "Ahmed Raza",
-    initials: "AR",
-    role: "Auto Electrician",
-    phone: "+974 5534 5678",
-    email: "ahmed.raza@garageworkspace.com",
-    nationalId: "29333400922",
-    baseSalary: 5500,
-    commissionRate: 5,
-    status: "On Job",
-    shift: "Evening",
-    joiningDate: "2023-08-20",
-    emergencyContact: "Father: +974 5577 3344",
-    assignedJobs: 3,
-    completedJobs: 171,
-    rating: 4.7,
-    experience: 4,
-    notes: "Specializes in CAN-bus wiring, ECU programming, and hybrid battery checks.",
-    assignments: [
-      { workOrder: "WO-00008", vehicle: "Toyota Camry", customer: "Test User", service: "Brake Service", status: "In Progress" },
-    ],
-  },
-  {
-    id: "MEC-1004",
-    mechanicId: "MEC-1004",
-    name: "Bilal Khan",
-    initials: "BK",
-    role: "AC Specialist",
-    phone: "+974 5545 6789",
-    email: "bilal.khan@garageworkspace.com",
-    nationalId: "29533400431",
-    baseSalary: 4800,
-    commissionRate: 4,
-    status: "Available",
-    shift: "Morning",
-    joiningDate: "2024-02-01",
-    emergencyContact: "Friend: +974 5566 4455",
-    assignedJobs: 1,
-    completedJobs: 156,
-    rating: 4.3,
-    experience: 4,
-    notes: "R134a/R1234yf climate systems, compressor overhauls and leak testing.",
-    assignments: [
-      { workOrder: "WO-00007", vehicle: "2002", customer: "Hamad", service: "Wheel Alignment", status: "In Progress" },
-    ],
-  },
-];
-
-// Seed sample salary disbursements
-const defaultSalaries: SalaryPaymentData[] = [
-  {
-    id: "SLIP-202610-01",
-    slipNo: "SLIP-202610-01",
-    mechanicId: "MEC-1001",
-    mechanicName: "Ali Hassan",
-    role: "Engine Specialist",
-    month: "October 2026",
-    baseSalary: 6500,
-    bonus: 500,
-    deductions: 0,
-    netSalary: 7000,
-    paymentDate: "2026-10-28",
-    paymentMethod: "Bank Transfer",
-    status: "Paid",
-    reference: "WPS-QNB-992140",
-    notes: "October salary with master technician performance bonus",
-  },
-  {
-    id: "SLIP-202610-02",
-    slipNo: "SLIP-202610-02",
-    mechanicId: "MEC-1002",
-    mechanicName: "M. Khan",
-    role: "Brake Specialist",
-    month: "October 2026",
-    baseSalary: 5200,
-    bonus: 300,
-    deductions: 100,
-    netSalary: 5400,
-    paymentDate: "2026-10-28",
-    paymentMethod: "Bank Transfer",
-    status: "Paid",
-    reference: "WPS-QNB-992141",
-    notes: "Overtime bonus added; 1-day advance deduction",
-  },
-  {
-    id: "SLIP-202610-03",
-    slipNo: "SLIP-202610-03",
-    mechanicId: "MEC-1003",
-    mechanicName: "Ahmed Raza",
-    role: "Auto Electrician",
-    month: "October 2026",
-    baseSalary: 5500,
-    bonus: 400,
-    deductions: 0,
-    netSalary: 5900,
-    paymentDate: "2026-10-27",
-    paymentMethod: "Cash",
-    status: "Paid",
-    reference: "CASH-VOUCH-882",
-    notes: "Cash disbursement signed by technician",
-  },
-  {
-    id: "SLIP-202610-04",
-    slipNo: "SLIP-202610-04",
-    mechanicId: "MEC-1004",
-    mechanicName: "Bilal Khan",
-    role: "AC Specialist",
-    month: "October 2026",
-    baseSalary: 4800,
-    bonus: 0,
-    deductions: 200,
-    netSalary: 4600,
-    paymentDate: "2026-10-26",
-    paymentMethod: "Bank Transfer",
-    status: "Paid",
-    reference: "WPS-QNB-992142",
-    notes: "Monthly base salary after company advance deduction",
-  },
-  {
-    id: "SLIP-202609-01",
-    slipNo: "SLIP-202609-01",
-    mechanicId: "MEC-1001",
-    mechanicName: "Ali Hassan",
-    role: "Engine Specialist",
-    month: "September 2026",
-    baseSalary: 6500,
-    bonus: 450,
-    deductions: 0,
-    netSalary: 6950,
-    paymentDate: "2026-09-28",
-    paymentMethod: "Bank Transfer",
-    status: "Paid",
-    reference: "WPS-QNB-981204",
-    notes: "September salary disbursement",
-  },
-  {
-    id: "SLIP-202609-02",
-    slipNo: "SLIP-202609-02",
-    mechanicId: "MEC-1002",
-    mechanicName: "M. Khan",
-    role: "Brake Specialist",
-    month: "September 2026",
-    baseSalary: 5200,
-    bonus: 250,
-    deductions: 0,
-    netSalary: 5450,
-    paymentDate: "2026-09-28",
-    paymentMethod: "Bank Transfer",
-    status: "Paid",
-    reference: "WPS-QNB-981205",
-    notes: "September salary disbursement",
-  },
-];
-
 const LOCAL_STORAGE_SALARIES_KEY = "garage_crm_mechanic_salaries_v1";
 const LOCAL_STORAGE_MECHANICS_KEY = "garage_crm_mechanics_v1";
 
@@ -294,7 +87,7 @@ export const Mechanics: React.FC<MechanicsProps> = ({
   // Navigation Tab: 'technicians' | 'salary'
   const [activeTab, setActiveTab] = useState<"technicians" | "salary">("technicians");
 
-  // Mechanics state
+  // Mechanics state - fresh clean start on new database
   const [mechanics, setMechanics] = useState<Mechanic[]>(() => {
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_MECHANICS_KEY);
@@ -303,9 +96,9 @@ export const Mechanics: React.FC<MechanicsProps> = ({
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch {}
-    return defaultMechanics;
+    return [];
   });
-  const [selectedId, setSelectedId] = useState<string>("MEC-1001");
+  const [selectedId, setSelectedId] = useState<string>("");
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("All Roles");
   const [statusFilter, setStatusFilter] = useState("All Status");
@@ -313,13 +106,13 @@ export const Mechanics: React.FC<MechanicsProps> = ({
   const [page, setPage] = useState(1);
   const pageSize = 10;
 
-  // Salary state
+  // Salary state - fresh clean start
   const [salaries, setSalaries] = useState<SalaryPaymentData[]>(() => {
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_SALARIES_KEY);
       if (saved) return JSON.parse(saved);
     } catch {}
-    return defaultSalaries;
+    return [];
   });
   const [selectedSalaryMonth, setSelectedSalaryMonth] = useState<string>("October 2026");
   const [salarySearch, setSalarySearch] = useState<string>("");

@@ -87,9 +87,9 @@ const LicenseSchema = new mongoose.Schema(
     },
     companyContact: {
       companyName: { type: String, default: 'Vertexia' },
-      phone: { type: String, default: '+974 5511 2222' },
-      whatsapp: { type: String, default: '+97455112222' },
-      email: { type: String, default: 'support@vertexia.tech' },
+      phone: { type: String, default: '+92 317 2981931' },
+      whatsapp: { type: String, default: '+923172981931' },
+      email: { type: String, default: 'support@vertexiaagency.com' },
       instructions: { type: String, default: 'Contact company support with your Registration ID to obtain or renew your license key.' },
     },
   },

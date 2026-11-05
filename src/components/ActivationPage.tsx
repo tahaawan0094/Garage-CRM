@@ -1,5 +1,16 @@
 import { useState } from 'react';
-import { KeyRound, Check, Copy, RefreshCw, Phone, Mail, MessageSquare, Wrench } from 'lucide-react';
+import {
+  KeyRound,
+  Check,
+  Copy,
+  RefreshCw,
+  Phone,
+  Mail,
+  MessageSquare,
+  Wrench,
+  ShieldCheck,
+  RotateCcw,
+} from 'lucide-react';
 import { licenseService, type BusinessRegistration, type LicenseStatus } from '../services/licenseService';
 
 interface ActivationPageProps {
@@ -25,11 +36,11 @@ export default function ActivationPage({
   const [successMsg, setSuccessMsg] = useState('');
 
   const contact = license.contact || {
-    companyName: 'Vertexia',
-    phone: '+974 5511 2222',
-    whatsapp: '+97455112222',
-    email: 'support@vertexia.tech',
-    instructions: 'Contact the company that supplied your CRM. Share your Registration ID; the company will issue a key for your workshop and agreed license period.',
+    companyName: 'Vertexia Agency',
+    phone: '+92 317 298 1931',
+    whatsapp: '923172981931',
+    email: 'support@vertexiaagency.com',
+    instructions: 'Contact Vertexia Agency to obtain or renew your license key. Share your Registration ID below.',
   };
 
   const copyRegistrationId = async () => {
@@ -100,109 +111,231 @@ export default function ActivationPage({
   const isPermanent = license.license_type === 'PERMANENT';
 
   return (
-    <div className="min-h-screen w-full bg-[#f5f7f9] text-[#243247] font-sans flex flex-col justify-start">
+    <div className="grid grid-cols-1 lg:grid-cols-2 h-full min-h-0 w-full bg-white font-sans text-slate-900 overflow-hidden">
       
-      {/* Top Header Bar */}
-      <header className="w-full bg-white border-b border-[#dce3e9] px-6 sm:px-12 py-5">
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-xl bg-orange-50 border border-orange-200 text-[#f95932] flex items-center justify-center font-bold shadow-xs">
-              <Wrench size={22} />
-            </div>
-            <div>
-              <strong className="text-xl font-bold text-[#253347] block leading-tight">
-                Auto Care &amp; Service Hub
-              </strong>
-              <span className="text-xs text-[#788697]">Workshop registration &amp; license activation</span>
-            </div>
-          </div>
-          {onGoToLogin && license.accessAllowed && (
-            <button
-              onClick={onGoToLogin}
-              className="text-xs font-semibold text-[#f95932] hover:underline cursor-pointer"
-            >
-              Sign in with existing account →
-            </button>
-          )}
+      {/* Left Column - Dark Slate / Support Area (50% on lg+, hidden on mobile) */}
+      <div className="relative hidden lg:flex flex-col items-center justify-center overflow-hidden bg-[#0c1626] p-8 lg:p-12 text-white select-none h-full min-h-0">
+        {/* Subtle Ambient Background Wireframe Circles */}
+        <div className="absolute inset-0 opacity-10 pointer-events-none">
+          <div className="absolute -left-16 -top-16 h-72 w-72 rounded-full border border-orange-400/40" />
+          <div className="absolute -bottom-28 -right-20 h-96 w-96 rounded-full border border-orange-300/30" />
+          <div className="absolute right-16 top-24 text-orange-300/20"><KeyRound size={86} /></div>
+          <div className="absolute bottom-20 left-16 text-orange-300/20"><ShieldCheck size={100} /></div>
         </div>
-      </header>
 
-      {/* 3 Steps Horizontal Bar */}
-      <div className="w-full bg-white border-b border-[#dce3e9] px-6 sm:px-12 py-3.5 shadow-xs">
-        <div className="max-w-6xl mx-auto grid grid-cols-3 gap-4 text-xs font-medium text-[#8692a0]">
-          <div className="flex items-center gap-2 font-medium text-emerald-600">
-            <Check size={14} />
-            <span>1. Registered</span>
+        <div className="relative z-10 flex max-w-lg flex-col items-center text-center">
+          
+          {/* Logo & Brand Header */}
+          <div className="mb-8 flex items-center gap-3.5">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white overflow-hidden shadow-sm p-2">
+              <Wrench size={24} className="text-[#f95932]" />
+            </div>
+            <div className="text-left">
+              <h1 className="text-xl font-bold tracking-tight text-white leading-tight">Garage CRM Suite</h1>
+              <p className="text-xs text-slate-400">License Key &amp; System Activation</p>
+            </div>
           </div>
-          <div className="flex items-center gap-2 font-bold text-[#f95932]">
-            <span>2. Activate license</span>
+
+          {/* Stepper Progress Indicator */}
+          <div className="w-full max-w-sm mb-6 bg-[#14233c] border border-orange-400/20 rounded-2xl p-5 text-left shadow-xl">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-[#f95932] mb-3">Setup Progress</p>
+            <div className="space-y-3.5">
+              <div className="flex items-center gap-3 text-emerald-400">
+                <span className="w-6 h-6 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center text-xs font-bold">
+                  <Check size={13} strokeWidth={2.8} />
+                </span>
+                <div>
+                  <strong className="text-xs font-semibold block text-emerald-300">1. Workshop Registered</strong>
+                  <span className="text-[11px] text-slate-400">{registration.businessName}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="w-6 h-6 rounded-full bg-[#f95932] text-white flex items-center justify-center text-xs font-bold shadow-md shadow-orange-500/30">
+                  2
+                </span>
+                <div>
+                  <strong className="text-xs font-semibold text-white block">2. Activate License Key</strong>
+                  <span className="text-[11px] text-slate-400">Apply company authorization key</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 opacity-60">
+                <span className="w-6 h-6 rounded-full bg-slate-700 text-slate-300 flex items-center justify-center text-xs font-bold">
+                  3
+                </span>
+                <div>
+                  <strong className="text-xs font-semibold text-slate-200 block">3. Workshop Sign In</strong>
+                  <span className="text-[11px] text-slate-400">Access dashboard &amp; bays</span>
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span>3. Sign in</span>
+
+          {/* Support Information Card */}
+          <div className="w-full max-w-sm bg-[#111e33] border border-slate-700/60 rounded-2xl p-5 text-left">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5 flex items-center gap-2">
+              <Phone size={14} className="text-[#f95932]" />
+              Need a License Key?
+            </h3>
+            <p className="text-xs text-slate-400 leading-relaxed mb-3">
+              Contact <strong className="text-white">{contact.companyName || 'your CRM provider'}</strong> with your Registration ID to obtain or renew your license key.
+            </p>
+
+            <div className="space-y-2">
+              {cleanWhatsapp && (
+                <a
+                  href={`https://wa.me/${cleanWhatsapp}?text=${encodeURIComponent(whatsappText)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center justify-center gap-2 text-xs font-bold text-emerald-400 hover:text-white bg-emerald-950/50 hover:bg-emerald-600/80 px-3.5 py-2.5 rounded-xl border border-emerald-500/30 transition w-full"
+                >
+                  <MessageSquare size={14} />
+                  <span>Contact on WhatsApp</span>
+                </a>
+              )}
+
+              <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
+                {cleanPhone && (
+                  <a href={`tel:${cleanPhone}`} className="hover:text-white transition flex items-center gap-1.5">
+                    <Phone size={12} className="text-slate-400" />
+                    <span>{contact.phone}</span>
+                  </a>
+                )}
+                {contact.email && (
+                  <a href={`mailto:${contact.email}`} className="hover:text-white transition flex items-center gap-1.5">
+                    <Mail size={12} className="text-slate-400" />
+                    <span>{contact.email}</span>
+                  </a>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Main Full-Page Body Layout */}
-      <main className="w-full max-w-6xl mx-auto px-6 sm:px-12 py-8 sm:py-10 flex-1">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
+      {/* Right Column - Responsive Scrollable Form Panel (50% on lg+, 100% on mobile) */}
+      <div className="w-full h-full min-h-0 flex flex-col justify-center items-center overflow-y-auto p-6 sm:p-10 lg:p-12 bg-white">
+        <div className="w-full max-w-lg mx-auto my-auto py-8">
           
-          {/* Main Activation Column */}
-          <div className="lg:col-span-7 space-y-6">
-            <div className="flex items-start gap-3.5 text-[#f95932]">
-              <KeyRound size={28} className="mt-0.5 flex-shrink-0" />
-              <div>
-                <h1 className="text-2xl font-bold text-[#253347] m-0">
-                  {isExpired ? 'Renew your Workshop license' : isSuspended ? 'Workshop license suspended' : 'Activate your Garage CRM'}
-                </h1>
-                <p className="text-xs text-[#6e7b8c] mt-1 leading-relaxed">
-                  Enter the license key provided by {contact.companyName || 'your CRM company'}.
-                </p>
+          {/* Header */}
+          <div className="mb-6">
+            <div className="mb-4 flex items-center justify-between lg:hidden">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-50 text-[#f95932] border border-orange-200/60 font-bold">
+                  <Wrench size={20} />
+                </div>
+                <div>
+                  <strong className="text-base font-bold text-slate-900 block leading-tight">Garage CRM</strong>
+                  <span className="text-xs text-slate-500">License Activation</span>
+                </div>
               </div>
+              {onGoToLogin && license.accessAllowed && (
+                <button
+                  type="button"
+                  onClick={onGoToLogin}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-xl border border-slate-200 text-slate-700 hover:border-[#f95932] hover:text-[#f95932] transition cursor-pointer"
+                >
+                  Sign In →
+                </button>
+              )}
             </div>
 
-            {/* Notice Alert */}
-            <div
-              className={`p-4 rounded-xl text-xs leading-relaxed ${
-                license.accessAllowed
-                  ? 'bg-[#f0fdf5] border border-[#bbe7cc] text-[#178146]'
-                  : isSuspended
-                  ? 'bg-[#fef2f2] border border-[#fecaca] text-[#991b1b]'
-                  : 'bg-[#fffaf0] border border-[#f2dfb1] text-[#806328]'
-              }`}
-            >
-              <strong className="block text-[11px] uppercase tracking-wider mb-1">
-                {license.accessAllowed
-                  ? 'License Active'
-                  : isSuspended
-                  ? 'Access Paused by Company'
-                  : String(license.status || 'ACTIVATION_REQUIRED').replace(/_/g, ' ')}
-              </strong>
-              <p className="m-0 leading-relaxed">{license.message || 'A license key is required to activate and operate the system.'}</p>
-              {isPermanent ? (
-                <small className="block mt-1.5 font-semibold text-emerald-700">Permanent license · Company suspension controls apply</small>
-              ) : license.expires_at ? (
-                <small className="block mt-1.5 font-semibold">Valid until {new Date(license.expires_at).toLocaleDateString()}</small>
-              ) : null}
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#f95932]">
+                Step 2 of 3 · License Verification
+              </p>
+              {onGoToLogin && license.accessAllowed && (
+                <button
+                  type="button"
+                  onClick={onGoToLogin}
+                  className="hidden lg:inline-flex text-xs font-semibold text-slate-500 hover:text-[#f95932] transition cursor-pointer"
+                >
+                  Sign in with existing account →
+                </button>
+              )}
             </div>
+            <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 mt-1">
+              {isExpired ? 'Renew Workshop License' : isSuspended ? 'Workshop License Suspended' : 'Activate Your Garage CRM'}
+            </h2>
+            <p className="mt-2 text-sm text-slate-500 leading-relaxed">
+              Enter your official license key to activate system features and start managing workshop operations.
+            </p>
+          </div>
 
-            {error && (
-              <div className="p-3.5 rounded-xl bg-[#fff3f2] border border-[#fecdca] text-[#b42318] text-xs">
-                {error}
-              </div>
-            )}
-            {successMsg && (
-              <div className="p-3.5 rounded-xl bg-[#f0fdf5] border border-[#bbe7cc] text-[#178146] text-xs">
-                {successMsg}
-              </div>
-            )}
+          {/* Status Banner */}
+          <div
+            className={`p-4 rounded-xl text-xs leading-relaxed mb-5 ${
+              license.accessAllowed
+                ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                : isSuspended
+                ? 'bg-red-50 border border-red-200 text-red-800'
+                : 'bg-amber-50 border border-amber-200 text-amber-900'
+            }`}
+          >
+            <strong className="block text-[11px] font-bold uppercase tracking-wider mb-1">
+              {license.accessAllowed
+                ? '✓ License Active'
+                : isSuspended
+                ? '⚠ Access Paused by Company'
+                : String(license.status || 'ACTIVATION_REQUIRED').replace(/_/g, ' ')}
+            </strong>
+            <p className="m-0 leading-relaxed">{license.message || 'A valid license key is required to activate and operate the system.'}</p>
+            {isPermanent ? (
+              <small className="block mt-1.5 font-semibold text-emerald-700">Permanent License · Company authorization active</small>
+            ) : license.expires_at ? (
+              <small className="block mt-1.5 font-semibold">Valid until {new Date(license.expires_at).toLocaleDateString()}</small>
+            ) : null}
+          </div>
 
-            {/* Form */}
-            <form onSubmit={handleActivate} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                  License key
-                </label>
+          {/* Registration ID Box with Copy Button */}
+          <div className="mb-6 p-4 rounded-xl bg-slate-50 border border-slate-200">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                Your Workshop Registration ID
+              </span>
+              <button
+                type="button"
+                onClick={copyRegistrationId}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-[#f95932] hover:text-[#ea4e28] transition cursor-pointer"
+              >
+                {copied ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}
+                <span>{copied ? 'Copied to Clipboard!' : 'Copy ID'}</span>
+              </button>
+            </div>
+            <code className="block text-xs sm:text-sm font-mono font-bold text-slate-900 bg-white p-2.5 rounded-lg border border-slate-200 select-all break-all">
+              {registration.businessId}
+            </code>
+            <div className="flex flex-wrap items-center justify-between text-xs text-slate-500 mt-2 gap-1">
+              <span>{registration.businessName} {registration.city ? `· ${registration.city}` : ''}</span>
+              {registration.databaseName && (
+                <span className="font-mono text-[10px] bg-slate-200/70 px-1.5 py-0.5 rounded text-slate-700 font-bold">
+                  DB: {registration.databaseName}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {error && (
+            <div className="p-3.5 mb-5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {successMsg && (
+            <div className="p-3.5 mb-5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" />
+              <span>{successMsg}</span>
+            </div>
+          )}
+
+          {/* License Form */}
+          <form onSubmit={handleActivate} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                License Key
+              </label>
+              <div className="relative">
+                <KeyRound className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
                 <input
                   type="text"
                   required
@@ -212,135 +345,56 @@ export default function ActivationPage({
                   value={key}
                   onChange={e => setKey(e.target.value.toUpperCase())}
                   disabled={busy}
-                  className="w-full px-4 py-3 bg-white border border-[#d5dde5] rounded-xl text-sm font-mono text-gray-900 outline-none focus:border-[#f95932] focus:ring-2 focus:ring-[#f95932]/15 transition"
+                  className="w-full pl-10 pr-4 py-3 bg-slate-50/70 border border-slate-200/90 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:bg-white focus:border-[#f95932] focus:ring-4 focus:ring-orange-500/10 outline-none transition"
                 />
               </div>
+            </div>
 
-              <button
-                type="submit"
-                disabled={busy || !key.trim()}
-                className="w-full py-3.5 px-4 bg-[#f95932] hover:bg-[#e04a25] text-white font-bold rounded-xl text-sm transition shadow-md shadow-orange-500/20 disabled:opacity-60 cursor-pointer active:scale-[0.99]"
-              >
-                {busy ? 'Please wait...' : 'Activate & continue to sign in'}
-              </button>
-            </form>
+            <button
+              type="submit"
+              disabled={busy || !key.trim()}
+              className="w-full py-3.5 px-4 rounded-xl font-bold text-white bg-[#f95932] hover:bg-[#ea4e28] transition shadow-lg shadow-orange-500/20 flex items-center justify-center gap-2 text-sm disabled:opacity-60 cursor-pointer active:scale-[0.99]"
+            >
+              <ShieldCheck size={17} />
+              <span>{busy ? 'Activating License...' : 'Activate & Continue to Sign In'}</span>
+            </button>
+          </form>
 
-            <div className="flex flex-wrap items-center gap-3 pt-1">
+          {/* Secondary Actions */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-100 mt-6">
+            <button
+              type="button"
+              onClick={handleVerify}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+            >
+              <RefreshCw size={13} className={busy ? 'animate-spin' : ''} />
+              <span>Verify / Retry</span>
+            </button>
+
+            {onResetToRegister && (
               <button
                 type="button"
-                onClick={handleVerify}
-                disabled={busy}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#d5dde5] bg-white text-xs font-semibold text-[#596b80] hover:bg-gray-50 transition cursor-pointer shadow-2xs"
+                onClick={async () => {
+                  if (window.confirm('Do you want to reset and start a fresh workshop registration?')) {
+                    await licenseService.reset();
+                    onResetToRegister();
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-400 hover:text-red-500 transition cursor-pointer"
+                title="Wipe registration and start from step 1"
               >
-                <RefreshCw size={14} className={busy ? 'animate-spin' : ''} />
-                <span>Verify license / retry</span>
+                <RotateCcw size={12} />
+                <span>Reset &amp; Register Again</span>
               </button>
-
-              {onResetToRegister && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (window.confirm('Do you want to reset and start a fresh workshop registration?')) {
-                      await licenseService.reset();
-                      onResetToRegister();
-                    }
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-red-200 bg-red-50/50 text-xs font-medium text-red-600 hover:bg-red-50 transition cursor-pointer"
-                >
-                  <span>← Register different workshop / Reset</span>
-                </button>
-              )}
-            </div>
-
-            <p className="text-xs text-[#7c899a] leading-relaxed pt-3">
-              Your license belongs to this workshop and its approved computers. After activation, sign in with your workshop account.
-            </p>
+            )}
           </div>
 
-          {/* Details & Support Column */}
-          <div className="lg:col-span-5 border-t lg:border-t-0 lg:border-l border-[#dce3e9] pt-8 lg:pt-0 lg:pl-10 space-y-6">
-            
-            {/* Registration ID Section */}
-            <div className="pb-6 border-b border-[#dce3e9]">
-              <span className="block text-xs font-semibold text-[#7a8798] uppercase tracking-wider">
-                Registration ID
-              </span>
-              <div className="flex items-center gap-2 mt-2 bg-white p-3 rounded-xl border border-[#dce3e9] shadow-2xs">
-                <code className="text-xs font-mono text-gray-800 break-all select-all flex-1 font-semibold">
-                  {registration.businessId}
-                </code>
-                <button
-                  type="button"
-                  onClick={copyRegistrationId}
-                  title="Copy Registration ID"
-                  className="p-1.5 rounded-md text-[#54806a] hover:bg-emerald-50 transition flex items-center gap-1 text-xs cursor-pointer"
-                >
-                  {copied ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
-                  <span className="text-[10px]">{copied ? 'Copied' : 'Copy'}</span>
-                </button>
-              </div>
-              <small className="block text-xs text-[#7a8798] mt-2">
-                {registration.businessName} {registration.city ? `· ${registration.city}` : ''}
-              </small>
-              {registration.databaseName && (
-                <div className="mt-2 text-[11px] text-slate-500 flex items-center gap-1.5">
-                  <span className="font-semibold text-slate-600">Atlas Database:</span>
-                  <code className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold">
-                    {registration.databaseName}
-                  </code>
-                </div>
-              )}
-            </div>
-
-            {/* Company Support Section */}
-            <div className="space-y-3">
-              <h3 className="text-sm font-semibold text-[#253347] m-0">Company support</h3>
-              <p className="text-xs text-[#6e7b8c] leading-relaxed">
-                {contact.instructions ||
-                  'Contact the company that supplied your CRM. Share your Registration ID; the company will issue a key for your agreed license period.'}
-              </p>
-
-              <div className="space-y-2.5 pt-2">
-                {cleanWhatsapp && (
-                  <a
-                    href={`https://wa.me/${cleanWhatsapp}?text=${encodeURIComponent(whatsappText)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-2 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-3.5 py-2.5 rounded-xl border border-emerald-200 transition w-full justify-center shadow-2xs"
-                  >
-                    <MessageSquare size={15} />
-                    <span>Contact on WhatsApp</span>
-                  </a>
-                )}
-
-                {cleanPhone && (
-                  <a
-                    href={`tel:${cleanPhone}`}
-                    className="flex items-center gap-2 text-xs font-medium text-[#078c4a] hover:underline pt-1"
-                  >
-                    <Phone size={13} />
-                    <span>{contact.phone}</span>
-                  </a>
-                )}
-
-                {contact.email && (
-                  <a
-                    href={`mailto:${contact.email}`}
-                    className="flex items-center gap-2 text-xs font-medium text-[#078c4a] hover:underline"
-                  >
-                    <Mail size={13} />
-                    <span>{contact.email}</span>
-                  </a>
-                )}
-              </div>
-            </div>
-          </div>
+          <p className="text-[11px] text-slate-400 text-center uppercase font-bold tracking-widest mt-8">
+            Auto Care &amp; Service Hub · Workshop System
+          </p>
         </div>
-      </main>
-
-      <footer className="w-full py-6 text-center text-xs text-[#788697] border-t border-[#dce3e9] bg-white mt-12">
-        Auto Care &amp; Service Hub · Workshop License Activation Portal
-      </footer>
+      </div>
     </div>
   );
 }

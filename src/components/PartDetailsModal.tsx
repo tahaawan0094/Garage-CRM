@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   X,
   Package,
@@ -56,6 +57,18 @@ export const PartDetailsModal: React.FC<PartDetailsModalProps> = ({
   onEdit,
   onDelete,
 }) => {
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen || !part) return null;
 
   const money = (val: number) => `QAR ${Number(val || 0).toFixed(2)}`;
@@ -72,29 +85,40 @@ export const PartDetailsModal: React.FC<PartDetailsModalProps> = ({
       ? (((part.sellingPrice - part.unitCost) / part.sellingPrice) * 100).toFixed(1)
       : "0.0";
 
-  return (
+  return createPortal(
     <div
       className="modal-backdrop"
       style={{
         position: "fixed",
-        inset: 0,
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: "100vw",
+        height: "100vh",
+        margin: 0,
         backgroundColor: "rgba(15, 23, 42, 0.65)",
         backdropFilter: "blur(4px)",
+        WebkitBackdropFilter: "blur(4px)",
         zIndex: 999999,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         padding: "16px",
+        overflowY: "auto",
       }}
       onClick={onClose}
     >
       <div
         className="part-details-dialog"
         style={{
+          margin: "auto",
+          position: "relative",
+          flexShrink: 0,
           background: "#ffffff",
           borderRadius: "14px",
-          width: "100%",
-          maxWidth: "760px",
+          width: "min(740px, 92vw)",
+          maxWidth: "min(740px, 92vw)",
           maxHeight: "90vh",
           display: "flex",
           flexDirection: "column",
@@ -619,6 +643,7 @@ export const PartDetailsModal: React.FC<PartDetailsModalProps> = ({
           </div>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

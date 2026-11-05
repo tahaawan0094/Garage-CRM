@@ -100,6 +100,27 @@ router.post('/login', async (req, res) => {
     user.lastLoginAt = new Date();
     await user.save();
 
+    // Retrieve workshop settings and logo from this database or central directory
+    const Setting = require('../models/Setting');
+    let settingsDoc = await Setting.findOne();
+    if (!settingsDoc) {
+      const status = await licenseManager.getStatus();
+      const reg = status.registration || {};
+      settingsDoc = {
+        garageName: reg.businessName || 'Garage Workshop',
+        facilitySubtitle: `${reg.city ? reg.city + ' ' : ''}Workshop Facility`,
+        ownerName: reg.ownerName || user.fullName || 'Workshop Owner',
+        ownerRole: 'Garage Owner',
+        phone: reg.phone || '',
+        whatsapp: reg.phone || '',
+        email: reg.email || '',
+        city: reg.city || '',
+        address: reg.city || '',
+        currency: reg.currency || 'USD',
+        logoUrl: reg.logoUrl || '',
+      };
+    }
+
     res.json({
       success: true,
       user: {
@@ -109,6 +130,8 @@ router.post('/login', async (req, res) => {
         role: user.role,
         allowedTabs: user.role === 'owner' ? ALL_TABS : user.allowedTabs,
       },
+      settings: settingsDoc,
+      services: settingsDoc.servicesCatalog || [],
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Activity,
   ArrowUp,
@@ -18,10 +19,8 @@ import {
   Lock,
   LogOut,
   Menu,
-  MoreHorizontal,
   Plus,
   RotateCcw,
-  Search,
   Settings,
   ShieldCheck,
   ShoppingCart,
@@ -33,6 +32,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
+import DesktopTitlebar from './components/DesktopTitlebar';
 import SplashScreen from './components/SplashScreen';
 import PosBilling from './components/PosBilling';
 import NewIntake from './components/NewIntake';
@@ -51,16 +51,17 @@ import NotificationsView from './components/NotificationsView';
 import RegistrationPage from './components/RegistrationPage';
 import ActivationPage from './components/ActivationPage';
 import LoginPage from './components/LoginPage';
+import LicenseLockedPage from './components/LicenseLockedPage';
 import { licenseService, type BusinessRegistration, type LicenseStatus } from './services/licenseService';
 import { authService, type AuthUser } from './services/authService';
-import { workOrdersApi, quotationsApi, customersApi, vehiclesApi, partsApi, mechanicsApi, invoicesApi } from './lib/api';
+import { workOrdersApi, quotationsApi, customersApi, vehiclesApi, partsApi, mechanicsApi, invoicesApi, settingsApi } from './lib/api';
 import { getNextInvoiceId, commitInvoiceId } from './lib/sequence';
 import { DateRangeFilter, type DateFilterValue, matchesDateFilter } from './components/DateRangeFilter';
 
 const nav: [string, LucideIcon][] = [['Dashboard', Home], ['POS Billing', ShoppingCart], ['New Intake', Plus], ['Work Orders', Wrench], ['Quotations', FileText], ['Invoices', FileText], ['Vehicles', CarFront], ['Customers', Users], ['Parts Inventory', Box], ['Mechanics', Users], ['Reports', ChartColumn], ['Settings', Settings]];
 const money = (value: number) => `QAR ${value.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
-function PanelTitle({ icon: Icon, title, onView }: { icon: LucideIcon; title: string; onView?: () => void }) {
-  return <div className="panel-title"><div><Icon size={25} /><h2>{title}</h2></div>{onView && <button className="text-link" onClick={onView}>View all</button>}</div>;
+function PanelTitle({ icon: Icon, title }: { icon: LucideIcon; title: string; onView?: () => void }) {
+  return <div className="panel-title"><div><Icon size={25} /><h2>{title}</h2></div></div>;
 }
 function App() {
   const [page, setPage] = useState('Dashboard');
@@ -75,6 +76,115 @@ function App() {
   const [posInitialTab, setPosInitialTab] = useState<'sale' | 'returns'>('sale');
   const [posTargetInvoiceId, setPosTargetInvoiceId] = useState<string | undefined>(undefined);
   const [dashboardDateFilter, setDashboardDateFilter] = useState<DateFilterValue>({ type: 'today' });
+
+  // ─── Desktop Zoom & Fullscreen Controls ─────────────────────────────────────
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [, setZoomLevel] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('garage_crm_zoom_level');
+      if (saved) return parseFloat(saved);
+    } catch (_) {}
+    return 1.0;
+  });
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().then(() => {
+        setIsFullscreen(true);
+      }).catch((err) => {
+        console.warn('Fullscreen request failed:', err);
+      });
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen().then(() => {
+          setIsFullscreen(false);
+        }).catch((err) => {
+          console.warn('Exit fullscreen failed:', err);
+        });
+      }
+    }
+  };
+
+  useEffect(() => {
+    const applyZoom = (target: number) => {
+      try {
+        localStorage.setItem('garage_crm_zoom_level', target.toString());
+      } catch (_) {}
+
+      if (window.desktopApp?.setZoomFactor) {
+        window.desktopApp.setZoomFactor(target);
+      }
+      if (document.body.style.zoom) {
+        document.body.style.zoom = '';
+      }
+      if (document.documentElement.style.zoom) {
+        document.documentElement.style.zoom = '';
+      }
+      const rootEl = document.getElementById('root');
+      if (rootEl && rootEl.style.zoom) {
+        rootEl.style.zoom = '';
+      }
+    };
+
+    // Initial zoom application (clear any legacy CSS body zoom that created white gap)
+    const initialZoom = parseFloat(localStorage.getItem('garage_crm_zoom_level') || '1.0');
+    applyZoom(initialZoom);
+
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    const handleWheel = (e: WheelEvent) => {
+      if (e.ctrlKey && window.desktopApp?.setZoomFactor) {
+        e.preventDefault();
+        setZoomLevel((current) => {
+          const delta = e.deltaY < 0 ? 0.05 : -0.05;
+          const target = Math.min(1.75, Math.max(0.65, Math.round((current + delta) * 100) / 100));
+          applyZoom(target);
+          return target;
+        });
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+      if (e.ctrlKey && window.desktopApp?.setZoomFactor) {
+        if (e.key === '=' || e.key === '+') {
+          e.preventDefault();
+          setZoomLevel((current) => {
+            const target = Math.min(1.75, Math.round((current + 0.1) * 10) / 10);
+            applyZoom(target);
+            return target;
+          });
+        } else if (e.key === '-' || e.key === '_') {
+          e.preventDefault();
+          setZoomLevel((current) => {
+            const target = Math.max(0.65, Math.round((current - 0.1) * 10) / 10);
+            applyZoom(target);
+            return target;
+          });
+        } else if (e.key === '0') {
+          e.preventDefault();
+          setZoomLevel(1.0);
+          applyZoom(1.0);
+        }
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    window.addEventListener('wheel', handleWheel, { passive: false });
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      window.removeEventListener('wheel', handleWheel);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   // System Authentication & License Gate State
   const [systemState, setSystemState] = useState<{
@@ -124,6 +234,52 @@ function App() {
             return;
           }
           const savedUser = authService.getCurrentUser();
+          if (res.registration?.businessName) {
+            try {
+              const rawSettings = localStorage.getItem('garage_crm_settings_v1');
+              const parsed = rawSettings ? JSON.parse(rawSettings) : { ...defaultSettings };
+              if (!parsed.garageName || parsed.garageName === 'Auto Care & Service Hub' || parsed.garageName === 'Garage Workshop') {
+                parsed.garageName = res.registration.businessName;
+              }
+              if (!parsed.facilitySubtitle || parsed.facilitySubtitle.includes('Doha Central Workshop Facility')) {
+                parsed.facilitySubtitle = `${res.registration.city ? res.registration.city + ' ' : ''}Workshop Facility`;
+              }
+              if (!parsed.phone || parsed.phone === '+974 4455 6677') {
+                parsed.phone = res.registration.phone || '';
+              }
+              if (!parsed.email || parsed.email.includes('dohacentralgarage.qa')) {
+                parsed.email = res.registration.email || '';
+              }
+              if (!parsed.city) parsed.city = res.registration.city || '';
+              if (!parsed.address || parsed.address.includes('Industrial Area, Street 24')) {
+                parsed.address = res.registration.city || '';
+              }
+              if ((res.registration as any)?.currency) {
+                parsed.currency = (res.registration as any).currency;
+              }
+              localStorage.setItem('garage_crm_settings_v1', JSON.stringify(parsed));
+              setAppSettings(parsed);
+            } catch (_) {}
+          }
+
+          // Authoritative Cloud Settings Sync: Retrieve latest garage settings & logo from MongoDB Atlas
+          settingsApi.get()
+            .then((cloudRes) => {
+              if (isMounted && cloudRes && cloudRes.success && cloudRes.settings) {
+                const cloudSettings = cloudRes.settings;
+                try {
+                  localStorage.setItem('garage_crm_settings_v1', JSON.stringify(cloudSettings));
+                  if (Array.isArray(cloudRes.services) && cloudRes.services.length > 0) {
+                    localStorage.setItem('garage_crm_services_catalog_v1', JSON.stringify(cloudRes.services));
+                  }
+                } catch (_) {}
+                setAppSettings(cloudSettings);
+                window.dispatchEvent(new CustomEvent('garage-settings-updated', { detail: cloudSettings }));
+              }
+            })
+            .catch((cloudErr) => {
+              console.warn('Startup cloud settings sync notice:', cloudErr.message);
+            });
           setSystemState(prev => ({
             ...prev,
             loading: false,
@@ -155,6 +311,18 @@ function App() {
     authService.logout();
     setSystemState(prev => ({ ...prev, currentUser: null }));
   };
+
+  const isLicenseLocked = Boolean(
+    systemState.isRegistered &&
+    systemState.license &&
+    (
+      systemState.license.status === 'EXPIRED' ||
+      systemState.license.status === 'SUSPENDED' ||
+      systemState.license.status === 'DEVICE_RELEASED' ||
+      (systemState.license.license_type === 'DATED' && systemState.license.expires_at && new Date(systemState.license.expires_at).getTime() <= Date.now()) ||
+      (!systemState.license.accessAllowed && systemState.license.status !== 'ACTIVATION_REQUIRED' && systemState.license.status !== 'UNREGISTERED')
+    )
+  );
 
   const [appSettings, setAppSettings] = useState<GarageSettings>(() => {
     try {
@@ -201,21 +369,50 @@ function App() {
   };
 
   useEffect(() => {
+    // Filter to exclude legacy unassociated seed records for registered workshops
+    const isSeedDummy = (item: any) => {
+      const seedNames = ['sheikh ahmed', 'ali shah', 'ahmed raza', 'fahad khan', 'sara mohammed'];
+      const cust = String(item.customer || item.customerName || '').toLowerCase();
+      const id = String(item.id || item.invoiceId || item.workOrderId || item.quotationId || '');
+      return seedNames.includes(cust) || /^INV-001[45][0-9]/.test(id) || /^QT-0001[4-8]/.test(id) || /^WO-0001[23]/.test(id);
+    };
+
     workOrdersApi.getAll({ limit: 100 }).then(res => {
-      setLiveOrders(res.data || []);
+      const raw = res.data || [];
+      const seen = new Set<string>();
+      const deduped = raw.filter((item: any) => {
+        if (isSeedDummy(item)) return false;
+        const key = `${item.customer}_${item.vehicle}_${item.plate}_${item.service}`.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      setLiveOrders(deduped);
     }).catch(() => { setLiveOrders([]); });
 
     quotationsApi.getAll({ status: 'Awaiting Approval', limit: 50 }).then(res => {
-      setQuotes(res.data || []);
+      const filtered = (res.data || []).filter((q: any) => !isSeedDummy(q));
+      setQuotes(filtered);
     }).catch(() => { setQuotes([]); });
 
     invoicesApi.getAll({ limit: 50 }).then(res => {
-      setLiveInvoices(res.data || []);
+      const raw = res.data || [];
+      const seen = new Set<string>();
+      const deduped = raw.filter((item: any) => {
+        if (isSeedDummy(item)) return false;
+        const key = item.workOrder && item.workOrder !== 'POS'
+          ? `${item.customer}_${item.workOrder}`.toLowerCase()
+          : item.id || item.invoiceId;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      setLiveInvoices(deduped);
     }).catch(() => { setLiveInvoices([]); });
 
-    partsApi.getAll({ limit: 20 }).then(res => {
+    partsApi.getAll({ limit: 50 }).then(res => {
       if (res.data) {
-        const low = res.data.filter((p: any) => p.quantity <= p.lowStockAt);
+        const low = res.data.filter((p: any) => Number(p.quantity) <= Number(p.lowStockAt));
         setLowStockParts(low);
       }
     }).catch(() => { setLowStockParts([]); });
@@ -263,16 +460,8 @@ function App() {
         tab: 'Invoices',
       });
     });
-    list.push({
-      id: 'cloud-db-sync',
-      type: 'system',
-      title: 'Atlas Central Directory Connected',
-      detail: `Tenant database [${systemState.registration?.databaseName || 'garage_taha_be02f35e'}] cloud verified`,
-      time: 'Cloud verified',
-      tab: 'Dashboard',
-    });
     return list;
-  }, [quotes, lowStockParts, liveOrders, liveInvoices, systemState.registration]);
+  }, [quotes, lowStockParts, liveOrders, liveInvoices]);
 
   const [modal, setModal] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
@@ -358,6 +547,47 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const handleScrollLock = () => {
+      if (window.scrollY !== 0 || window.scrollX !== 0) {
+        window.scrollTo(0, 0);
+      }
+      if (document.body.scrollTop !== 0 || document.body.scrollLeft !== 0) {
+        document.body.scrollTop = 0;
+        document.body.scrollLeft = 0;
+      }
+      if (document.documentElement.scrollTop !== 0 || document.documentElement.scrollLeft !== 0) {
+        document.documentElement.scrollTop = 0;
+        document.documentElement.scrollLeft = 0;
+      }
+    };
+    window.addEventListener('scroll', handleScrollLock, { passive: false });
+
+    // Block window-level wheel scroll that causes canvas overscroll or statusbar drift
+    const handleWindowWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) return; // Allow zoom handling
+      let el = e.target as HTMLElement | null;
+      let canScroll = false;
+      while (el && el !== document.body && el !== document.documentElement) {
+        const style = window.getComputedStyle(el);
+        if ((style.overflowY === 'auto' || style.overflowY === 'scroll') && el.scrollHeight > el.clientHeight) {
+          canScroll = true;
+          break;
+        }
+        el = el.parentElement;
+      }
+      if (!canScroll) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('wheel', handleWindowWheel, { passive: false });
+
+    return () => {
+      window.removeEventListener('scroll', handleScrollLock);
+      window.removeEventListener('wheel', handleWindowWheel);
+    };
+  }, []);
+
   const searchRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -408,7 +638,11 @@ function App() {
     setQuotes(current => current.filter(quote => quote.id !== id));
     if (decision === 'Approved') {
       quotationsApi.approve(id).catch(err => console.warn('Approve sync error:', err));
-      if (target && appSettings.autoInvoiceOnApproval !== false) {
+      const existingInv = liveInvoices.find(
+        (inv: any) =>
+          (target && ((target.workOrder && inv.workOrder === target.workOrder) || inv.workOrder === id || inv.id === id))
+      );
+      if (target && !existingInv && appSettings.autoInvoiceOnApproval !== false) {
         try {
           const newInvId = getNextInvoiceId();
           commitInvoiceId(newInvId);
@@ -423,12 +657,12 @@ function App() {
             amount: target.amount,
             total: target.amount,
             status: 'Pending',
-            advisor: target.advisor || 'Ali Hassan',
+            advisor: target.advisor || '',
             date: new Date().toLocaleDateString('en-GB'),
             items: target.items || [],
-            workOrder: target.id,
+            workOrder: target.workOrder || target.id,
           });
-          setNotice(`Quotation ${id} approved and invoice generated.`);
+          setNotice(`Quotation ${id} approved and invoice ${newInvId} generated.`);
         } catch (invErr) {
           console.warn('Invoice generation error:', invErr);
         }
@@ -629,121 +863,173 @@ function App() {
       : nav.slice(0, 1);
   }, [systemState.currentUser]);
 
-  if (systemState.loading) {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center p-4 font-sans">
-        <div className="flex flex-col items-center gap-3.5">
-          <div className="w-10 h-10 border-3 border-orange-200 border-t-[#f95932] rounded-full animate-spin" />
-          <p className="text-slate-500 text-xs tracking-wider uppercase font-semibold">
-            Loading Workshop System...
-          </p>
+  return (
+    <div className="desktop-root-shell min-h-screen h-screen w-full flex flex-col overflow-hidden bg-[#16212f]">
+      <DesktopTitlebar
+        isFullscreen={isFullscreen}
+        onToggleFullscreen={toggleFullscreen}
+      />
+
+      {systemState.loading ? (
+        <div className="flex-1 min-h-0 flex items-center justify-center bg-white font-sans">
+          <div className="flex flex-col items-center gap-3.5">
+            <div className="w-10 h-10 border-3 border-orange-200 border-t-[#f95932] rounded-full animate-spin" />
+            <p className="text-slate-500 text-xs tracking-wider uppercase font-semibold">
+              Loading Workshop System...
+            </p>
+          </div>
         </div>
-      </div>
-    );
-  }
+      ) : (!systemState.isRegistered || !systemState.registration) && !systemState.showLoginDirect ? (
+        <div
+          className="flex-1 min-h-0 w-full overflow-hidden flex flex-col bg-white"
+          style={{ flex: '1 1 auto', minHeight: 0, height: 'calc(100vh - 80px)', maxHeight: 'calc(100vh - 80px)' }}
+        >
+          <RegistrationPage
+            onRegistered={(reg) => {
+              setSystemState(prev => ({
+                ...prev,
+                isRegistered: true,
+                registration: reg,
+                showLoginDirect: false,
+                license: {
+                  status: 'ACTIVATION_REQUIRED',
+                  accessAllowed: false,
+                  message: 'Garage registered. Please enter license key.',
+                },
+              }));
+            }}
+            onGoToLogin={() => {
+              setSystemState(prev => ({ ...prev, showLoginDirect: true }));
+            }}
+          />
+        </div>
+      ) : isLicenseLocked ? (
+        <div
+          className="flex-1 min-h-0 w-full overflow-hidden flex flex-col bg-white"
+          style={{ flex: '1 1 auto', minHeight: 0, height: 'calc(100vh - 80px)', maxHeight: 'calc(100vh - 80px)' }}
+        >
+          <LicenseLockedPage
+            registration={systemState.registration}
+            license={systemState.license!}
+            onUnlocked={() => {
+              licenseService.getStatus().then(res => {
+                setSystemState(prev => ({
+                  ...prev,
+                  license: res.license,
+                }));
+              });
+            }}
+            onLogout={handleLogout}
+            onResetToRegister={() => {
+              setSystemState({
+                loading: false,
+                isRegistered: false,
+                registration: null,
+                license: { status: 'UNREGISTERED', accessAllowed: false },
+                currentUser: null,
+                showActivationOverride: false,
+                showLoginDirect: false,
+              });
+            }}
+          />
+        </div>
+      ) : ((!systemState.license?.accessAllowed || systemState.showActivationOverride) && !systemState.showLoginDirect) ? (
+        <div
+          className="flex-1 min-h-0 w-full overflow-hidden flex flex-col bg-white"
+          style={{ flex: '1 1 auto', minHeight: 0, height: 'calc(100vh - 80px)', maxHeight: 'calc(100vh - 80px)' }}
+        >
+          <ActivationPage
+            registration={systemState.registration || { businessId: '', businessName: '', businessType: '', ownerName: '', phone: '', city: '' }}
+            license={systemState.license || { status: 'ACTIVATION_REQUIRED', accessAllowed: false }}
+            onActivated={() => {
+              licenseService.getStatus().then(res => {
+                setSystemState(prev => ({
+                  ...prev,
+                  license: res.license,
+                  showActivationOverride: false,
+                }));
+              });
+            }}
+            onGoToLogin={
+              systemState.license?.accessAllowed
+                ? () => setSystemState(prev => ({ ...prev, showActivationOverride: false }))
+                : undefined
+            }
+            onResetToRegister={() => {
+              setSystemState({
+                loading: false,
+                isRegistered: false,
+                registration: null,
+                license: { status: 'UNREGISTERED', accessAllowed: false },
+                currentUser: null,
+                showActivationOverride: false,
+                showLoginDirect: false,
+              });
+            }}
+          />
+        </div>
+      ) : !systemState.currentUser ? (
+        <div
+          className="flex-1 min-h-0 w-full overflow-hidden flex flex-col bg-white"
+          style={{ flex: '1 1 auto', minHeight: 0, height: 'calc(100vh - 80px)', maxHeight: 'calc(100vh - 80px)' }}
+        >
+          <LoginPage
+            garageName={appSettings.garageName || systemState.registration?.businessName}
+            garageLogo={
+              appSettings.logoUrl?.startsWith('data:')
+                ? appSettings.logoUrl
+                : `${import.meta.env.BASE_URL}${appSettings.logoUrl || 'Garage-crm-logo.png'}`
+            }
+            onLogin={(user) => {
+              // Immediately apply cloud settings loaded during multi-PC login
+              try {
+                const updatedSettingsRaw = localStorage.getItem('garage_crm_settings_v1');
+                if (updatedSettingsRaw) {
+                  setAppSettings(JSON.parse(updatedSettingsRaw));
+                }
+              } catch (_) {}
 
-  // 1. Not Registered -> Registration Page (unless user clicked "Sign in to existing workshop")
-  if ((!systemState.isRegistered || !systemState.registration) && !systemState.showLoginDirect) {
-    return (
-      <RegistrationPage
-        onRegistered={(reg) => {
-          setSystemState(prev => ({
-            ...prev,
-            isRegistered: true,
-            registration: reg,
-            showLoginDirect: false,
-            license: {
-              status: 'ACTIVATION_REQUIRED',
-              accessAllowed: false,
-              message: 'Garage registered. Please enter license key.',
-            },
-          }));
-        }}
-        onGoToLogin={() => {
-          setSystemState(prev => ({ ...prev, showLoginDirect: true }));
-        }}
-      />
-    );
-  }
+              settingsApi.get().then((cloudRes) => {
+                if (cloudRes && cloudRes.success && cloudRes.settings) {
+                  setAppSettings(cloudRes.settings);
+                  try {
+                    localStorage.setItem('garage_crm_settings_v1', JSON.stringify(cloudRes.settings));
+                  } catch (_) {}
+                  window.dispatchEvent(new CustomEvent('garage-settings-updated', { detail: cloudRes.settings }));
+                }
+              }).catch(() => {});
 
-  // 2. Unactivated, Suspended, or Expired -> Activation Page (unless bypassed for universal login)
-  if ((!systemState.license?.accessAllowed || systemState.showActivationOverride) && !systemState.showLoginDirect) {
-    return (
-      <ActivationPage
-        registration={systemState.registration || { businessId: '', businessName: '', businessType: '', ownerName: '', phone: '', city: '' }}
-        license={systemState.license || { status: 'ACTIVATION_REQUIRED', accessAllowed: false }}
-        onActivated={() => {
-          licenseService.getStatus().then(res => {
-            setSystemState(prev => ({
-              ...prev,
-              license: res.license,
-              showActivationOverride: false,
-            }));
-          });
-        }}
-        onGoToLogin={
-          systemState.license?.accessAllowed
-            ? () => setSystemState(prev => ({ ...prev, showActivationOverride: false }))
-            : undefined
-        }
-        onResetToRegister={() => {
-          setSystemState({
-            loading: false,
-            isRegistered: false,
-            registration: null,
-            license: { status: 'UNREGISTERED', accessAllowed: false },
-            currentUser: null,
-            showActivationOverride: false,
-            showLoginDirect: false,
-          });
-        }}
-      />
-    );
-  }
-
-  // 3. Activated or Universal Multi-PC Login -> Login Page
-  if (!systemState.currentUser) {
-    return (
-      <LoginPage
-        garageName={appSettings.garageName || systemState.registration?.businessName}
-        garageLogo={
-          appSettings.logoUrl?.startsWith('data:')
-            ? appSettings.logoUrl
-            : `${import.meta.env.BASE_URL}${appSettings.logoUrl || 'Garage-crm-logo.png'}`
-        }
-        onLogin={(user) => {
-          licenseService.getStatus().then(res => {
-            setSystemState({
-              loading: false,
-              isRegistered: true,
-              registration: res.registration || null,
-              license: res.license,
-              currentUser: user,
-              showActivationOverride: false,
-              showLoginDirect: false,
-            });
-          });
-        }}
-        onOpenActivation={() => {
-          setSystemState(prev => ({ ...prev, showActivationOverride: true, showLoginDirect: false }));
-        }}
-        onResetToRegister={() => {
-          setSystemState({
-            loading: false,
-            isRegistered: false,
-            registration: null,
-            license: { status: 'UNREGISTERED', accessAllowed: false },
-            currentUser: null,
-            showActivationOverride: false,
-            showLoginDirect: false,
-          });
-        }}
-      />
-    );
-  }
-
-  return <div className="workspace">
-    <aside
+              licenseService.getStatus().then(res => {
+                setSystemState({
+                  loading: false,
+                  isRegistered: true,
+                  registration: res.registration || null,
+                  license: res.license,
+                  currentUser: user,
+                  showActivationOverride: false,
+                  showLoginDirect: false,
+                });
+              });
+            }}
+            onOpenActivation={() => {
+              setSystemState(prev => ({ ...prev, showActivationOverride: true, showLoginDirect: false }));
+            }}
+            onResetToRegister={() => {
+              setSystemState({
+                loading: false,
+                isRegistered: false,
+                registration: null,
+                license: { status: 'UNREGISTERED', accessAllowed: false },
+                currentUser: null,
+                showActivationOverride: false,
+                showLoginDirect: false,
+              });
+            }}
+          />
+        </div>
+      ) : (
+        <div className="workspace flex-1 flex min-h-0 min-w-0 overflow-hidden bg-[#f3f5f8] relative">
+        <aside
       className={`sidebar ${sidebar ? 'is-open' : ''} ${!isSidebarExpanded ? 'is-minimized' : ''} ${sidebarHovered && !sidebarLocked ? 'is-hover-expanded' : ''}`}
       onMouseEnter={() => setSidebarHovered(true)}
       onMouseLeave={() => setSidebarHovered(false)}
@@ -755,18 +1041,35 @@ function App() {
             src={
               appSettings.logoUrl?.startsWith('data:')
                 ? appSettings.logoUrl
-                : `${import.meta.env.BASE_URL}${appSettings.logoUrl || 'Garage-crm-logo.png'}`
+                : `${import.meta.env.BASE_URL}${(!appSettings.logoUrl || appSettings.logoUrl === 'Garage-crm-logo.png') ? 'Garage-crm-logo-light.png' : appSettings.logoUrl}`
             }
             alt={appSettings.garageName || 'Garage CRM'}
             style={{ objectFit: 'contain' }}
             onError={(e) => {
-              (e.target as HTMLImageElement).src = `${import.meta.env.BASE_URL}Garage-crm-logo.png`;
+              (e.target as HTMLImageElement).src = `${import.meta.env.BASE_URL}Garage-crm-logo-light.png`;
             }}
           />
-          <div className="brand-title-wrap">
-            <span className="brand-title">{(appSettings.garageName || 'AUTO CARE & SERVICE').toUpperCase()}</span>
-            <span className="brand-subtitle">{appSettings.facilitySubtitle || 'Workshop CRM System'}</span>
-          </div>
+          {(() => {
+            const rawName = (appSettings.garageName || 'AUTO CARE & SERVICE').toUpperCase();
+            const len = rawName.length;
+            const dynamicSize = len > 26 ? '10px' : len > 19 ? '11px' : len > 14 ? '12.5px' : '14px';
+            return (
+              <div className="brand-title-wrap">
+                <span
+                  className="brand-title"
+                  style={{
+                    fontSize: dynamicSize,
+                    lineHeight: len > 18 ? 1.15 : 1.25,
+                    maxHeight: '34px',
+                  }}
+                  title={rawName}
+                >
+                  {rawName}
+                </span>
+                <span className="brand-subtitle">{appSettings.facilitySubtitle || 'Workshop CRM System'}</span>
+              </div>
+            );
+          })()}
         </a>
         <button
           type="button"
@@ -788,8 +1091,9 @@ function App() {
                 className={`nav-item ${isSelected ? 'selected' : ''}`}
                 onClick={() => navigate(label)}
                 title={label}
+                data-tooltip={label}
               >
-                <Icon size={19} strokeWidth={isSelected ? 2.4 : 2.0} />
+                <Icon size={20} strokeWidth={isSelected ? 2.4 : 2.0} />
                 <span>{label}</span>
               </button>
             );
@@ -802,15 +1106,16 @@ function App() {
             className="nav-item nav-logout-item"
             onClick={handleLogout}
             title="Sign Out from Garage CRM"
+            data-tooltip="Sign Out"
           >
-            <LogOut size={19} />
+            <LogOut size={20} />
             <span>Sign Out</span>
           </button>
         </div>
       </nav>
     </aside>
     {sidebar && <button aria-label="Close navigation" className="sidebar-scrim" onClick={() => setSidebar(false)} />}
-    <div className={`main-shell ${!isSidebarExpanded ? 'sidebar-minimized' : 'sidebar-expanded'}`}>
+    <div className={`main-shell flex-1 flex flex-col min-w-0 h-full overflow-y-auto overflow-x-hidden bg-[#f3f5f8] ${!isSidebarExpanded ? 'sidebar-minimized' : 'sidebar-expanded'}`}>
       <header className="topbar">
         <button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setSidebar(true)}><Menu /></button>
         <div className="topbar-workshop-hub">
@@ -952,7 +1257,7 @@ function App() {
             >
               <span className="profile-avatar">{getInitials(systemState.currentUser?.fullName || appSettings.ownerName)}</span>
               <span>
-                <strong>{systemState.currentUser?.fullName || appSettings.ownerName || 'Sheikh Ahmed'}</strong>
+                <strong>{systemState.currentUser?.fullName || appSettings.ownerName || 'Workshop Owner'}</strong>
                 <small className="capitalize">{systemState.currentUser?.role || appSettings.ownerRole || 'Garage Owner'}</small>
               </span>
               <ChevronDown
@@ -1054,7 +1359,7 @@ function App() {
           </div>
         </div>
       </header>
-      <div hidden={page !== 'POS Billing'}>
+      {page === 'POS Billing' && (
         <PosBilling
           globalSearch={query}
           notify={setNotice}
@@ -1062,8 +1367,8 @@ function App() {
           initialTab={posInitialTab}
           initialReturnInvoiceId={posTargetInvoiceId}
         />
-      </div>
-      <div hidden={page !== 'New Intake'}>
+      )}
+      {page === 'New Intake' && (
         <NewIntake
           notify={setNotice}
           onSynced={() => setRefreshTrigger(prev => prev + 1)}
@@ -1074,8 +1379,8 @@ function App() {
             setPage('Work Orders');
           }}
         />
-      </div>
-      <div hidden={page !== 'Work Orders'}>
+      )}
+      {page === 'Work Orders' && (
         <WorkOrders
           notify={setNotice}
           refreshTrigger={refreshTrigger}
@@ -1084,15 +1389,15 @@ function App() {
             setPage('Invoices');
           }}
         />
-      </div>
-      <div hidden={page !== 'Quotations'}>
+      )}
+      {page === 'Quotations' && (
         <Quotations
           notify={setNotice}
           refreshTrigger={refreshTrigger}
           onSynced={() => setRefreshTrigger(prev => prev + 1)}
         />
-      </div>
-      <div hidden={page !== 'Invoices'}>
+      )}
+      {page === 'Invoices' && (
         <Invoices
           notify={setNotice}
           refreshTrigger={refreshTrigger}
@@ -1109,8 +1414,8 @@ function App() {
             setQuery('');
           }}
         />
-      </div>
-      <div hidden={page !== 'Vehicles'}>
+      )}
+      {page === 'Vehicles' && (
         <Vehicles
           notify={setNotice}
           refreshTrigger={refreshTrigger}
@@ -1122,8 +1427,8 @@ function App() {
             setQuery('');
           }}
         />
-      </div>
-      <div hidden={page !== 'Customers'}>
+      )}
+      {page === 'Customers' && (
         <Customers
           notify={setNotice}
           refreshTrigger={refreshTrigger}
@@ -1135,23 +1440,23 @@ function App() {
             setQuery('');
           }}
         />
-      </div>
-      <div hidden={page !== 'Parts Inventory'}>
+      )}
+      {page === 'Parts Inventory' && (
         <PartsInventory notify={setNotice} refreshTrigger={refreshTrigger} onAdd={() => open('Add Part')} />
-      </div>
-      <div hidden={page !== 'Mechanics'}>
+      )}
+      {page === 'Mechanics' && (
         <Mechanics notify={setNotice} refreshTrigger={refreshTrigger} onAdd={() => open('Add Mechanic')} onAssign={() => open('Assign Work Order')} />
-      </div>
-      <div hidden={page !== 'Reports'}>
+      )}
+      {page === 'Reports' && (
         <Reports notify={setNotice} />
-      </div>
-      <div hidden={page !== 'Users & Roles'}>
+      )}
+      {page === 'Users & Roles' && (
         <UsersManagement notify={setNotice} />
-      </div>
-      <div hidden={page !== 'Settings'}>
+      )}
+      {page === 'Settings' && (
         <SettingsView notify={setNotice} />
-      </div>
-      <div hidden={page !== 'Notifications'}>
+      )}
+      {page === 'Notifications' && (
         <NotificationsView
           notifications={allNotifications}
           readNotifIds={readNotifIds}
@@ -1162,8 +1467,9 @@ function App() {
           onRefresh={() => setRefreshTrigger(prev => prev + 1)}
           notify={setNotice}
         />
-      </div>
-      <main hidden={page !== 'Dashboard'} className="dashboard">
+      )}
+      {page === 'Dashboard' && (
+        <main className="dashboard flex-1 w-full max-w-full">
         <div className="dashboard-header-bar">
           <div className="dashboard-header-title">
             <h2>Workshop Overview</h2>
@@ -1186,9 +1492,9 @@ function App() {
         ] as [LucideIcon, string, string, string, string][]).map(([Icon, value, label, change, color]) => <article className="stat-card" key={label}><span className={`stat-icon ${color}`}><Icon size={27} strokeWidth={2.3} /></span><div><strong className={`stat-value ${value.length > 8 ? 'currency' : ''}`}>{value}</strong><p>{label}</p><small className={change.startsWith('+') ? 'positive' : 'muted'}>{change}</small></div></article>)}</section>
         <div className="primary-grid">
           <section className="panel orders-panel"><PanelTitle icon={Wrench} title="Active Work Orders" onView={() => { setTab('All'); setQuery(''); }} /><div className="tabs" role="tablist" aria-label="Work order status">{[['Active', tabCounts.Active], ['Awaiting Parts', tabCounts['Awaiting Parts']], ['Completed', tabCounts.Completed], ['Released', tabCounts.Released], ['All', tabCounts.All]].map(([label, count]) => <button role="tab" aria-selected={tab === label} key={label} className={tab === label ? 'active' : ''} onClick={() => setTab(String(label))}>{label} ({count})</button>)}</div>
-            <div className="table-scroll"><table><thead><tr>{['WO#', 'Vehicle', 'Plate No.', 'Customer', 'Service', 'Mechanic', 'Status', ''].map((heading, index) => <th key={index}>{heading}</th>)}</tr></thead><tbody>{visibleOrders.map(order => {
+            <div className="table-scroll"><table><thead><tr>{['WO#', 'Vehicle', 'Plate No.', 'Customer', 'Service', 'Mechanic', 'Status'].map((heading, index) => <th key={index}>{heading}</th>)}</tr></thead><tbody>{visibleOrders.map(order => {
               const initials = order.initials || getInitials(order.mechanic);
-              return <tr key={order.id}><td><button className="order-id" onClick={() => open(`Work order ${order.id}`)}>{order.id}</button><small>{order.year || '2024'}</small></td><td><div className="vehicle-cell"><CarFront className="vehicle-icon" size={39} strokeWidth={1.4} /><span>{order.vehicle}</span></div></td><td className="muted">{order.plate}</td><td>{order.customer}</td><td>{order.service}<span className="cell-detail">{order.detail || ''}</span></td><td><div className="mechanic"><span className={`avatar ${initials === 'MK' ? 'peach' : ''}`}>{initials}</span>{order.mechanic}</div></td><td><span className={`badge ${order.status === 'Awaiting Parts' ? 'pending' : order.status === 'Ready for Delivery' ? 'ready' : ''}`}>{order.status}</span></td><td><button className="icon-button" aria-label={`View ${order.id}`} onClick={() => open(`Work order ${order.id}`)}><MoreHorizontal size={19} /></button></td></tr>;
+              return <tr key={order.id}><td><button className="order-id" onClick={() => open(`Work order ${order.id}`)}>{order.id}</button><small>{order.year || '2024'}</small></td><td><div className="vehicle-cell"><CarFront className="vehicle-icon" size={39} strokeWidth={1.4} /><span>{order.vehicle}</span></div></td><td className="muted">{order.plate}</td><td>{order.customer}</td><td>{order.service}<span className="cell-detail">{order.detail || ''}</span></td><td><div className="mechanic"><span className={`avatar ${initials === 'MK' ? 'peach' : ''}`}>{initials}</span>{order.mechanic}</div></td><td><span className={`badge ${order.status === 'Awaiting Parts' ? 'pending' : order.status === 'Ready for Delivery' ? 'ready' : ''}`}>{order.status}</span></td></tr>;
             })}</tbody></table>{visibleOrders.length === 0 && <div className="empty-state"><CarFront size={30} /><p>{query ? 'No work orders match your search.' : `No ${tab.toLowerCase()} work orders. Start with New Intake.`}</p></div>}</div>
           </section>
           <section className="panel quotes-panel"><PanelTitle icon={FileText} title="Quotations Awaiting Approval" onView={() => open('All quotations')} /><div className="quote-list">{quotes.map((quote, index) => <article className="quote" key={quote.id}><CarFront size={53} strokeWidth={1.3} className={`quote-car car-${index}`} /><div className="quote-info"><strong>{quote.id}</strong><p>{quote.vehicle} · {quote.year || '2024'}</p><p>{quote.service}</p></div><div className="quote-actions"><strong>{money(quote.amount || 0)}</strong><small>{quote.time || 'Awaiting approval'}</small><div><button className="approve" onClick={() => decideQuote(quote.id, 'Approved')}>Approve</button><button className="reject" onClick={() => decideQuote(quote.id, 'Rejected')}>Reject</button></div></div></article>)}{quotes.length === 0 && <div className="empty-state"><Check /><p>No quotations awaiting approval.</p></div>}</div></section>
@@ -1243,8 +1549,11 @@ function App() {
           <section className="panel activity-panel"><PanelTitle icon={Clock3} title="Recent Activity" onView={() => open('Recent Activity')} />{recentActivities.length > 0 ? <div className="timeline">{recentActivities.map((act: any, idx: number) => <div className="activity" key={idx}><span className={`timeline-dot ${act.color}`} /><div><p>{act.title}</p><small>{act.detail}</small></div><time>{act.time}</time></div>)}</div> : <div className="empty-state"><Clock3 size={28} /><p>No recent activity yet. Added records will appear here.</p></div>}</section>
         </div>
       </main>
+      )}
     </div>
-    <footer className="statusbar">
+  </div>
+  )}
+  <footer className="statusbar">
       <div>
         <span className="online-indicator-wrap" title={isOnline ? 'System Online (Atlas Cloud Database Active)' : 'System Offline (Local Workspace)'}>
           <span className={`online-ping ${!isOnline ? 'offline' : ''}`} />
@@ -1272,9 +1581,37 @@ function App() {
     </footer>
 
     {/* Help Modal */}
-    {showHelpModal && (
-      <div className="modal-backdrop" onClick={() => setShowHelpModal(false)}>
-        <section className="modal" style={{ width: '560px' }} role="dialog" aria-modal="true" onClick={e => e.stopPropagation()}>
+    {showHelpModal && createPortal(
+      <div
+        className="modal-backdrop"
+        onClick={() => setShowHelpModal(false)}
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          width: '100vw',
+          height: '100vh',
+          margin: 0,
+          padding: '16px',
+          zIndex: 999999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'rgba(15, 23, 42, 0.65)',
+          backdropFilter: 'blur(4px)',
+          WebkitBackdropFilter: 'blur(4px)',
+          overflowY: 'auto',
+        }}
+      >
+        <section
+          className="modal"
+          style={{ margin: 'auto', position: 'relative', flexShrink: 0, width: '560px' }}
+          role="dialog"
+          aria-modal="true"
+          onClick={e => e.stopPropagation()}
+        >
           <div className="modal-heading">
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: '#fff0e7', color: '#f15a24', display: 'grid', placeItems: 'center' }}>
@@ -1332,13 +1669,42 @@ function App() {
             </button>
           </div>
         </section>
-      </div>
+      </div>,
+      document.body
     )}
 
     {/* Support Modal */}
-    {showSupportModal && (
-      <div className="modal-backdrop" onClick={() => setShowSupportModal(false)}>
-        <section className="modal" style={{ width: '520px' }} role="dialog" aria-modal="true" onClick={e => e.stopPropagation()}>
+    {showSupportModal && createPortal(
+      <div
+        className="modal-backdrop"
+        onClick={() => setShowSupportModal(false)}
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          width: '100vw',
+          height: '100vh',
+          margin: 0,
+          padding: '16px',
+          zIndex: 999999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'rgba(15, 23, 42, 0.65)',
+          backdropFilter: 'blur(4px)',
+          WebkitBackdropFilter: 'blur(4px)',
+          overflowY: 'auto',
+        }}
+      >
+        <section
+          className="modal"
+          style={{ margin: 'auto', position: 'relative', flexShrink: 0, width: '520px' }}
+          role="dialog"
+          aria-modal="true"
+          onClick={e => e.stopPropagation()}
+        >
           <div className="modal-heading">
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: '#fff0e7', color: '#f15a24', display: 'grid', placeItems: 'center' }}>
@@ -1491,10 +1857,11 @@ function App() {
             </form>
           )}
         </section>
-      </div>
+      </div>,
+      document.body
     )}
-    {notice && (
-      <div className="toast" role="status">
+    {notice && createPortal(
+      <div className="toast" role="status" style={{ zIndex: 99999999 }}>
         <span className="toast-icon-wrap">
           <Check size={15} />
         </span>
@@ -1502,7 +1869,8 @@ function App() {
         <button aria-label="Dismiss notification" onClick={() => setNotice('')}>
           <X size={15} />
         </button>
-      </div>
+      </div>,
+      document.body
     )}
     {modal === 'Add Part' ? (
       <AddPartModal
@@ -1511,15 +1879,46 @@ function App() {
         onSave={handleSavePart}
         notify={setNotice}
       />
-    ) : modal && (
-      <div className="modal-backdrop" onClick={() => setModal(null)}>
-        <section className="modal" role="dialog" aria-modal="true" aria-label={modal} onClick={event => event.stopPropagation()}>
+    ) : modal && createPortal(
+      <div
+        className="modal-backdrop"
+        onClick={() => setModal(null)}
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          width: '100vw',
+          height: '100vh',
+          margin: 0,
+          padding: '16px',
+          zIndex: 999999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'rgba(15, 23, 42, 0.65)',
+          backdropFilter: 'blur(4px)',
+          WebkitBackdropFilter: 'blur(4px)',
+          overflowY: 'auto',
+        }}
+      >
+        <section
+          className="modal"
+          style={{ margin: 'auto', position: 'relative', flexShrink: 0 }}
+          role="dialog"
+          aria-modal="true"
+          aria-label={modal}
+          onClick={event => event.stopPropagation()}
+        >
           <div className="modal-heading"><h2>{modal}</h2><button autoFocus className="icon-button" aria-label="Close dialog" onClick={() => setModal(null)}><X /></button></div>
           {modal.startsWith('Work order') ? (() => { const order = liveOrders.find(item => modal.endsWith(item.id)); return order ? <div className="order-details"><CarFront size={48} /><h3>{order.vehicle}</h3><p>{order.customer} · Plate {order.plate}</p><p>{order.service} — {order.detail}</p><p>Assigned to {order.mechanic}</p><span className="badge">{order.status}</span></div> : <div className="empty-state"><CarFront size={30} /><p>Work order details not found.</p></div>; })() : ['Add Customer', 'Add Vehicle', 'Add Mechanic', 'New Intake', 'New Invoice', 'Create Invoice', 'Create Quotation', 'Quick Bill', 'Service Sale', 'Parts Sale'].includes(modal) ? <form onSubmit={handleModalSubmit}><p className="form-intro">Enter details to save directly into MongoDB Atlas database.</p><label>{modal === 'Add Mechanic' ? 'Mechanic name' : 'Customer name'}<input name="field1" required placeholder={modal === 'Add Mechanic' ? 'e.g. Tariq Khan' : 'e.g. Sheikh Ahmed'} /></label><label>{modal === 'Add Customer' ? 'Phone number' : modal === 'Add Vehicle' ? 'Vehicle / model' : modal === 'Add Mechanic' ? 'Role / Specialization' : 'Vehicle / description'}<input name="field2" required placeholder={modal === 'Add Customer' ? '+974 5512 3456' : modal === 'Add Vehicle' ? 'e.g. Toyota Land Cruiser' : modal === 'Add Mechanic' ? 'e.g. Engine Specialist' : 'e.g. Toyota Land Cruiser'} /></label><label>{modal === 'Add Vehicle' ? 'Plate number' : modal === 'Add Mechanic' ? 'Phone number' : 'Notes / Address'}{modal === 'Add Vehicle' ? <input name="field3" required placeholder="e.g. 770781" /> : modal === 'Add Mechanic' ? <input name="field3" required placeholder="e.g. 050 123 4567" /> : <textarea name="field3" placeholder="Add address or any customer notes" rows={3} />}</label><button type="submit" className="primary-button"><Plus size={18} />Save to Database</button></form> : <div className="module-placeholder"><Activity size={38} /><h3>{modal}</h3><p>This module is ready for the next development step. Explore work orders and approve quotations on the dashboard now.</p><button className="primary-button" onClick={() => setModal(null)}>Back to dashboard</button></div>}
         </section>
-      </div>
+      </div>,
+      document.body
     )}
     <SplashScreen />
-  </div>;
+    </div>
+  );
 }
 export default App;

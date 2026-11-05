@@ -29,21 +29,29 @@ export function parseRecordDate(val: any): Date | null {
   const s = String(val).trim();
   if (!s) return null;
 
-  // Try standard parse
-  const parsed = Date.parse(s);
-  if (!isNaN(parsed)) return new Date(parsed);
-
-  // Match DD/MM/YYYY or DD-MM-YYYY
+  // Priority 1: Match DD/MM/YYYY or DD-MM-YYYY (e.g. 04/11/2026 or 4/11/2026)
   const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
   if (dmy) {
-    return new Date(parseInt(dmy[3], 10), parseInt(dmy[2], 10) - 1, parseInt(dmy[1], 10));
+    const day = parseInt(dmy[1], 10);
+    const month = parseInt(dmy[2], 10) - 1;
+    const year = parseInt(dmy[3], 10);
+    const d = new Date(year, month, day);
+    if (!isNaN(d.getTime())) return d;
   }
 
-  // Match YYYY-MM-DD
+  // Priority 2: Match YYYY-MM-DD or YYYY/MM/DD (e.g. 2026-11-04)
   const ymd = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
   if (ymd) {
-    return new Date(parseInt(ymd[1], 10), parseInt(ymd[2], 10) - 1, parseInt(ymd[3], 10));
+    const year = parseInt(ymd[1], 10);
+    const month = parseInt(ymd[2], 10) - 1;
+    const day = parseInt(ymd[3], 10);
+    const d = new Date(year, month, day);
+    if (!isNaN(d.getTime())) return d;
   }
+
+  // Priority 3: Try standard parse (ISO strings, English month strings like "04 Nov 2026")
+  const parsed = Date.parse(s);
+  if (!isNaN(parsed)) return new Date(parsed);
 
   return null;
 }
@@ -83,21 +91,33 @@ export function matchesDateFilter(dateVal: any, filter: DateFilterValue): boolea
   }
 
   if (filter.type === 'week') {
-    // Current calendar week (Monday to Sunday) or last 7 days
+    // Current calendar week (Monday to Sunday) or last 7 rolling days
     const day = now.getDay();
     const diffToMonday = day === 0 ? -6 : 1 - day;
     const monday = new Date(now);
     monday.setDate(now.getDate() + diffToMonday);
     const sunday = new Date(monday);
     sunday.setDate(monday.getDate() + 6);
-    return d >= startOfDay(monday) && d <= endOfDay(sunday);
+
+    const sevenDaysAgo = new Date(now);
+    sevenDaysAgo.setDate(now.getDate() - 6);
+
+    const inCalendarWeek = d >= startOfDay(monday) && d <= endOfDay(sunday);
+    const inLast7Days = d >= startOfDay(sevenDaysAgo) && d <= endOfDay(now);
+    return inCalendarWeek || inLast7Days;
   }
 
   if (filter.type === 'month') {
-    // Current month (1st of month to last day of month)
+    // Current month (1st to last day of month) or last 30 rolling days
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    return d >= startOfDay(monthStart) && d <= endOfDay(monthEnd);
+
+    const thirtyDaysAgo = new Date(now);
+    thirtyDaysAgo.setDate(now.getDate() - 29);
+
+    const inCalendarMonth = d >= startOfDay(monthStart) && d <= endOfDay(monthEnd);
+    const inLast30Days = d >= startOfDay(thirtyDaysAgo) && d <= endOfDay(now);
+    return inCalendarMonth || inLast30Days;
   }
 
   if (filter.type === 'custom') {

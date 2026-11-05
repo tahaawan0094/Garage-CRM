@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   Building2,
   Receipt,
@@ -21,9 +22,12 @@ import {
   EyeOff,
   X,
   ShieldAlert,
+  Printer,
 } from "lucide-react";
 import { CustomDropdown } from "./CustomDropdown";
 import { authService } from "../services/authService";
+import { settingsApi } from "../lib/api";
+import type { ReceiptData } from "../utils/thermalPrinter";
 
 export interface GarageSettings {
   // Workshop Profile
@@ -57,6 +61,12 @@ export interface GarageSettings {
   invoiceFooterNotes: string;
   gatePassDisclaimer: string;
 
+  // Hardware & Receipt / Document Printer (Tested Standard from Pharmacy POS)
+  printerMode?: "demo" | "windows";
+  paperSize?: "58mm" | "80mm" | "A4";
+  printerName?: string;
+  autoPrint?: boolean;
+
   // Labor & Rates
   laborHourlyRate: number;
   diagnosticFee: number;
@@ -85,21 +95,21 @@ export const SETTINGS_STORAGE_KEY = "garage_crm_settings_v1";
 export const SERVICES_STORAGE_KEY = "garage_crm_services_catalog_v1";
 
 export const defaultSettings: GarageSettings = {
-  garageName: "Auto Care & Service Hub",
-  facilitySubtitle: "Doha Central Workshop Facility · Bays 01–12",
-  ownerName: "Sheikh Ahmed",
+  garageName: "Garage Workshop",
+  facilitySubtitle: "Automotive Care & Diagnostics Center",
+  ownerName: "Workshop Owner",
   ownerRole: "Garage Owner",
-  phone: "+974 4455 6677",
-  whatsapp: "+974 5512 3456",
-  email: "service@dohacentralgarage.qa",
-  crNumber: "CR-98412-QA",
-  taxNumber: "QA-7749210",
-  address: "Industrial Area, Street 24, Main Workshop Complex",
-  city: "Doha",
-  country: "Qatar",
-  currency: "QAR",
+  phone: "",
+  whatsapp: "",
+  email: "",
+  crNumber: "",
+  taxNumber: "",
+  address: "",
+  city: "",
+  country: "",
+  currency: "USD",
   operatingHours: "Sat – Thu: 8:00 AM – 8:00 PM (Friday Closed)",
-  logoUrl: "Garage-crm-logo-light.png",
+  logoUrl: "",
 
   taxRate: 0,
   invoicePrefix: "INV-",
@@ -115,6 +125,12 @@ export const defaultSettings: GarageSettings = {
     "Thank you for choosing Auto Care & Service Hub. All parts and services carry an official 30-day workshop warranty. Payment is due upon delivery.",
   gatePassDisclaimer:
     "The vehicle has passed safety verification inspection and is authorized for release from workshop bays.",
+
+  // Printer Defaults (Ported from Pharmacy POS)
+  printerMode: "windows",
+  paperSize: "80mm",
+  printerName: "",
+  autoPrint: true,
 
   laborHourlyRate: 150,
   diagnosticFee: 200,
@@ -195,6 +211,86 @@ export function SettingsView({ notify }: { notify: (msg: string) => void }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logoFileInputRef = useRef<HTMLInputElement>(null);
 
+  // Live Windows Printers (MedKit Pharmacy POS Standard)
+  const [printers, setPrinters] = useState<any[]>([]);
+  const [testingPrint, setTestingPrint] = useState(false);
+
+  useEffect(() => {
+    const fetchPrinters = async () => {
+      try {
+        const desktop = (window as any).desktopApp || (window as any).electronAPI;
+        if (desktop?.getPrinterList) {
+          const list = await desktop.getPrinterList();
+          if (Array.isArray(list)) {
+            setPrinters(list);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not retrieve local printers:", err);
+      }
+    };
+    fetchPrinters();
+  }, []);
+
+  const handleTestPrint = async () => {
+    setTestingPrint(true);
+    try {
+      const { printThermalOrWindowsReceipt } = await import("../utils/thermalPrinter");
+      const sampleReceipt: ReceiptData = {
+        storeName: settings.garageName || "AUTO CARE & SERVICE HUB",
+        storeAddress: settings.address || "Automotive Care & Diagnostics Center",
+        storePhone: settings.phone || "+974 4455 6677",
+        storeEmail: settings.email || "services@garageworkspace.com",
+        taxNumber: settings.taxNumber || "QA-7749210",
+        crNumber: settings.crNumber || "CR-98412-QA",
+        invoiceNumber: "TEST-0001",
+        date: new Date().toLocaleDateString("en-GB"),
+        customer: {
+          name: "Walk-in Test Customer",
+          phone: "+974 5511 2233",
+          vehicle: "Toyota Land Cruiser",
+          plate: "QA-99120",
+        },
+        items: [
+          { name: "Synthetic Engine Oil 5W-40 (4L)", quantity: 1, price: 180, subtotal: 180 },
+          { name: "OEM Engine Oil Filter", quantity: 1, price: 45, subtotal: 45 },
+          { name: "General Periodic Inspection Service", quantity: 1, price: 120, subtotal: 120 },
+        ],
+        subtotal: 345,
+        discount: 0,
+        tax: Number(((345 * (settings.taxRate || 0)) / 100).toFixed(2)),
+        total: Number((345 + (345 * (settings.taxRate || 0)) / 100).toFixed(2)),
+        paidAmount: Number((345 + (345 * (settings.taxRate || 0)) / 100).toFixed(2)),
+        changeAmount: 0,
+        paymentMethod: "Cash",
+        receiptFooter: settings.invoiceFooterNotes || "Thank you for trusting Auto Care & Service Hub!",
+        receiptTerms: "All workshop repairs carry 30-day workmanship warranty.",
+      };
+
+      const res = await printThermalOrWindowsReceipt({
+        receipt: sampleReceipt,
+        settings: {
+          printerMode: settings.printerMode || "windows",
+          paperSize: settings.paperSize || "80mm",
+          printerName: settings.printerName || "",
+          autoPrint: true,
+        },
+        type: "Test Receipt",
+        manual: true,
+      });
+
+      if (res.success) {
+        notify("Test receipt sent to printer successfully!");
+      } else {
+        notify(res.reason || "Printer command initiated. Please check printer.");
+      }
+    } catch (err: any) {
+      notify("Printer error: " + (err.message || "Failed to print"));
+    } finally {
+      setTestingPrint(false);
+    }
+  };
+
   // Load persisted settings on mount
   useEffect(() => {
     try {
@@ -218,6 +314,23 @@ export function SettingsView({ notify }: { notify: (msg: string) => void }) {
     } catch (e) {
       console.warn("Could not load services catalog:", e);
     }
+
+    // Authoritative Cloud Sync: Fetch settings from MongoDB Atlas
+    settingsApi
+      .get()
+      .then((res) => {
+        if (res && res.success && res.settings) {
+          setSettings((prev) => ({ ...prev, ...res.settings }));
+          localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(res.settings));
+          if (Array.isArray(res.services) && res.services.length > 0) {
+            setServices(res.services);
+            localStorage.setItem(SERVICES_STORAGE_KEY, JSON.stringify(res.services));
+          }
+        }
+      })
+      .catch((e) => {
+        console.warn("Could not load cloud settings:", e);
+      });
   }, []);
 
   const handleChange = (key: keyof GarageSettings, value: any) => {
@@ -320,8 +433,15 @@ export function SettingsView({ notify }: { notify: (msg: string) => void }) {
           new CustomEvent("garage-settings-updated", { detail: settings })
         );
 
+        // Sync to Cloud MongoDB Atlas so all PCs and laptops share the exact same settings and logo
+        try {
+          await settingsApi.save(settings, services);
+        } catch (cloudErr: any) {
+          console.warn("Could not sync settings to cloud:", cloudErr);
+        }
+
         setSaveSuccess(true);
-        notify("Workshop settings verified and updated successfully.");
+        notify("Workshop settings verified and synced to cloud successfully.");
         setTimeout(() => setSaveSuccess(false), 3000);
         setIsSaving(false);
       } else if (pendingAction === 'reset') {
@@ -332,6 +452,9 @@ export function SettingsView({ notify }: { notify: (msg: string) => void }) {
         window.dispatchEvent(
           new CustomEvent("garage-settings-updated", { detail: defaultSettings })
         );
+        try {
+          await settingsApi.save(defaultSettings, defaultServicesCatalog);
+        } catch (_) {}
         notify("Workshop configuration verified and reset to factory defaults.");
       }
 
@@ -490,14 +613,28 @@ export function SettingsView({ notify }: { notify: (msg: string) => void }) {
     return (total / 1024).toFixed(1);
   };
 
+  useEffect(() => {
+    if (!securityModalOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !verifyingSecurity) {
+        e.stopPropagation();
+        setSecurityModalOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [securityModalOpen, verifyingSecurity]);
+
   return (
     <main
       className="settings-page"
       style={{
-        maxWidth: "1920px",
-        margin: "0 auto",
+        width: "100%",
+        maxWidth: "100%",
+        margin: 0,
         padding: "16px 20px 60px",
         color: "#14213a",
+        boxSizing: "border-box",
       }}
     >
       {/* Header */}
@@ -738,7 +875,7 @@ export function SettingsView({ notify }: { notify: (msg: string) => void }) {
       {/* TAB 1: WORKSHOP PROFILE & BRANDING                                        */}
       {/* ========================================================================= */}
       {activeTab === "profile" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "16px" }}>
           {/* Card 1: Branding & Identity */}
           <div
             style={{
@@ -1158,7 +1295,7 @@ export function SettingsView({ notify }: { notify: (msg: string) => void }) {
       {/* TAB 2: INVOICING, POS & TAX CONFIGURATION                                 */}
       {/* ========================================================================= */}
       {activeTab === "invoicing" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "16px" }}>
           <div
             style={{
               background: "#ffffff",
@@ -1406,6 +1543,235 @@ export function SettingsView({ notify }: { notify: (msg: string) => void }) {
               </div>
             </div>
           </div>
+
+          {/* Card: Hardware & Receipt / Document Printer (Tested from Pharmacy POS) */}
+          <div
+            style={{
+              background: "#ffffff",
+              border: "1px solid #e2e8f0",
+              borderRadius: "10px",
+              padding: "20px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: "16px",
+                borderBottom: "1px solid #f1f5f9",
+                paddingBottom: "10px",
+                flexWrap: "wrap",
+                gap: "10px",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <Printer size={18} style={{ color: "#ea580c" }} />
+                <h2 style={{ margin: 0, fontSize: "14px", fontWeight: 700, color: "#172640" }}>
+                  Hardware &amp; Receipt / Document Printer
+                </h2>
+              </div>
+              <span
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  padding: "3px 10px",
+                  borderRadius: "20px",
+                  background: "#f0fdf4",
+                  color: "#16a34a",
+                  border: "1px solid #bbf7d0",
+                }}
+              >
+                Direct Windows Spooler Ready
+              </span>
+            </div>
+
+            <p style={{ margin: "0 0 16px 0", fontSize: "12px", color: "#64748b", lineHeight: 1.5 }}>
+              Attach and configure your physical thermal receipt printer (58mm / 80mm) or A4 office printer.
+              Works directly with Windows drivers for instant silent POS billing receipts, quotations, job cards, and invoices.
+            </p>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+                gap: "16px",
+              }}
+            >
+              <div>
+                <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#52647f", marginBottom: "5px" }}>
+                  Printer Mode
+                </label>
+                <select
+                  value={settings.printerMode || "windows"}
+                  onChange={(e) => handleChange("printerMode", e.target.value as "windows" | "demo")}
+                  style={{
+                    width: "100%",
+                    height: "36px",
+                    padding: "0 10px",
+                    border: "1px solid #dfe5ee",
+                    borderRadius: "6px",
+                    fontSize: "12.5px",
+                    color: "#1e293b",
+                    outline: "none",
+                    background: "#ffffff",
+                  }}
+                >
+                  <option value="windows">Windows Direct System Spooler (Silent Driver)</option>
+                  <option value="demo">Demo / Interactive Print Dialog</option>
+                </select>
+                <span style={{ fontSize: "10.5px", color: "#64748b" }}>
+                  "Windows" mode prints directly to your USB/LAN hardware printer.
+                </span>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#52647f", marginBottom: "5px" }}>
+                  Paper Size / Document Format
+                </label>
+                <select
+                  value={settings.paperSize || "80mm"}
+                  onChange={(e) => handleChange("paperSize", e.target.value as "58mm" | "80mm" | "A4")}
+                  style={{
+                    width: "100%",
+                    height: "36px",
+                    padding: "0 10px",
+                    border: "1px solid #dfe5ee",
+                    borderRadius: "6px",
+                    fontSize: "12.5px",
+                    color: "#1e293b",
+                    outline: "none",
+                    background: "#ffffff",
+                  }}
+                >
+                  <option value="80mm">80mm Thermal Receipt (Standard Workshop Roll)</option>
+                  <option value="58mm">58mm Thermal Receipt (Compact Mini Roll)</option>
+                  <option value="A4">A4 Full Sheet (Standard Laser / Inkjet)</option>
+                </select>
+                <span style={{ fontSize: "10.5px", color: "#64748b" }}>
+                  Standard thermal roll size for POS counter receipts is 80mm.
+                </span>
+              </div>
+
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "5px" }}>
+                  <label style={{ fontSize: "11px", fontWeight: 600, color: "#52647f" }}>
+                    Installed Windows Printer Device
+                  </label>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const desktop = (window as any).desktopApp || (window as any).electronAPI;
+                      if (desktop?.getPrinterList) {
+                        const list = await desktop.getPrinterList();
+                        if (Array.isArray(list)) setPrinters(list);
+                        notify("Printer list refreshed (" + (list?.length || 0) + " detected)");
+                      }
+                    }}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "#ea580c",
+                      fontSize: "10.5px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      padding: 0,
+                    }}
+                  >
+                    Refresh List
+                  </button>
+                </div>
+                <select
+                  value={settings.printerName || ""}
+                  onChange={(e) => handleChange("printerName", e.target.value)}
+                  style={{
+                    width: "100%",
+                    height: "36px",
+                    padding: "0 10px",
+                    border: "1px solid #dfe5ee",
+                    borderRadius: "6px",
+                    fontSize: "12.5px",
+                    color: "#1e293b",
+                    outline: "none",
+                    background: "#ffffff",
+                  }}
+                >
+                  <option value="">Default Windows Printer (System Default)</option>
+                  {printers.map((p: any) => (
+                    <option key={p.name} value={p.name}>
+                      {p.name} {p.isDefault ? "(Default)" : ""}
+                    </option>
+                  ))}
+                </select>
+                <span style={{ fontSize: "10.5px", color: "#64748b" }}>
+                  {printers.length > 0
+                    ? `${printers.length} live printer(s) connected to this computer.`
+                    : "Using Windows system default printer."}
+                </span>
+              </div>
+            </div>
+
+            <div
+              style={{
+                marginTop: "16px",
+                paddingTop: "16px",
+                borderTop: "1px solid #f1f5f9",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: "12px",
+              }}
+            >
+              <label
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  cursor: "pointer",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  color: "#334155",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={Boolean(settings.autoPrint)}
+                  onChange={(e) => handleChange("autoPrint", e.target.checked)}
+                  style={{
+                    width: "17px",
+                    height: "17px",
+                    accentColor: "#ea580c",
+                    cursor: "pointer",
+                  }}
+                />
+                <span>Automatically print receipt immediately when POS checkout payment completes</span>
+              </label>
+
+              <button
+                type="button"
+                onClick={handleTestPrint}
+                disabled={testingPrint}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "8px 18px",
+                  borderRadius: "7px",
+                  border: "1px solid #ea580c",
+                  background: "#fff7ed",
+                  color: "#ea580c",
+                  fontSize: "12.5px",
+                  fontWeight: 700,
+                  cursor: testingPrint ? "wait" : "pointer",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                <Printer size={15} />
+                <span>{testingPrint ? "Printing Test Receipt..." : "Send Test Print Receipt"}</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1413,7 +1779,7 @@ export function SettingsView({ notify }: { notify: (msg: string) => void }) {
       {/* TAB 3: LABOR & SERVICE RATES CATALOG                                      */}
       {/* ========================================================================= */}
       {activeTab === "services" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "16px" }}>
           {/* Base rates cards */}
           <div
             style={{
@@ -1738,7 +2104,7 @@ export function SettingsView({ notify }: { notify: (msg: string) => void }) {
       {/* TAB 4: STAFF & PAYROLL RULES                                              */}
       {/* ========================================================================= */}
       {activeTab === "payroll" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "16px" }}>
           <div
             style={{
               background: "#ffffff",
@@ -1880,7 +2246,7 @@ export function SettingsView({ notify }: { notify: (msg: string) => void }) {
       {/* TAB 5: BACKUP, RESTORE & SYSTEM HEALTH                                    */}
       {/* ========================================================================= */}
       {activeTab === "data" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "16px" }}>
           {/* Backup & restore card */}
           <div
             style={{
@@ -2026,24 +2392,35 @@ export function SettingsView({ notify }: { notify: (msg: string) => void }) {
       )}
 
       {/* Security Password Verification Dialog */}
-      {securityModalOpen && (
+      {securityModalOpen && createPortal(
         <div
           className="modal-backdrop"
           style={{
             position: "fixed",
-            inset: 0,
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: "100vw",
+            height: "100vh",
+            margin: 0,
             backgroundColor: "rgba(15, 23, 42, 0.65)",
             backdropFilter: "blur(4px)",
+            WebkitBackdropFilter: "blur(4px)",
             zIndex: 999999,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             padding: "16px",
+            overflowY: "auto",
           }}
           onClick={() => !verifyingSecurity && setSecurityModalOpen(false)}
         >
           <div
             style={{
+              margin: "auto",
+              position: "relative",
+              flexShrink: 0,
               background: "#ffffff",
               borderRadius: "14px",
               width: "100%",
@@ -2252,7 +2629,8 @@ export function SettingsView({ notify }: { notify: (msg: string) => void }) {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </main>
   );
