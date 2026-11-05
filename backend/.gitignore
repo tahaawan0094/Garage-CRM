@@ -1,3 +1,6 @@
+desktop-release/
+dist-installer/
+engine/
 node_modules/
 .env
 *.log
